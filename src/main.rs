@@ -1,14 +1,19 @@
 use std::error::Error;
-
-use image::ImageReader;
 use termcolor::BufferWriter;
-use tui_video_chat::encoder::{AsciiEncoding, Frame, FrameSize};
+use tui_video_chat::image::{AsciiEncoding, Frame, FrameSize, Window};
+
+const ENCODING: &[char] = &[':', '-', '=', '+', '*', '%', '@', '#'];
+const _ENCODING_REVERSED: &[char] = &['#', '@', '%', '*', '+', '=', '-', ':'];
 
 fn main() -> Result<(), Box<dyn Error>> {
     let puppy = Frame::from_path("assets/bitiz.png", FrameSize::new(35, 50))?;
 
-    let encoding = AsciiEncoding(vec![':', '-', '=', '+', '*', '%', '@', '#']);
-    let mut buffer_writer = BufferWriter::stdout(termcolor::ColorChoice::Auto);
-    puppy.draw(encoding, &mut buffer_writer)?;
+    let encoding = AsciiEncoding(ENCODING.to_vec());
+
+    let mut window = Window {
+        buffer_writer: BufferWriter::stdout(termcolor::ColorChoice::Auto),
+    };
+
+    window.draw(puppy.clone(), &encoding)?;
     Ok(())
 }
