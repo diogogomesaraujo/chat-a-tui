@@ -1,0 +1,10 @@
+[package]
+name = "tui-video-chat"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25.9"
+imageproc = "0.26.0"
+termcolor = "1.4.1"
+terminal_size = "0.4.3"
