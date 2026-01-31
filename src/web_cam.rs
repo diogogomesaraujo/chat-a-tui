@@ -1,15 +1,21 @@
-use image::{ImageBuffer, Luma, Rgb};
+use image::{
+    ImageBuffer, Luma, Rgb,
+    imageops::{
+        colorops::{brighten_in_place, contrast_in_place},
+        contrast,
+    },
+};
 use nokhwa::{
-    CallbackCamera, nokhwa_initialize,
+    Camera, nokhwa_initialize,
     pixel_format::{LumaFormat, RgbFormat},
     query,
-    utils::{ApiBackend, RequestedFormat, RequestedFormatType},
+    utils::{ApiBackend, CameraFormat, RequestedFormat, RequestedFormatType, Resolution},
 };
 use std::error::Error;
 
 pub struct WebCam {
-    pub luma: CallbackCamera,
-    pub rgb: CallbackCamera,
+    pub luma: Camera,
+    pub rgb: Camera,
 }
 
 impl WebCam {
@@ -22,23 +28,25 @@ impl WebCam {
         cameras.iter().for_each(|cam| println!("{:?}", cam));
 
         let rgb_format =
-            RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
+            RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(CameraFormat::new(
+                Resolution::new(640, 480),
+                nokhwa::utils::FrameFormat::YUYV,
+                30,
+            )));
         let luma_format =
-            RequestedFormat::new::<LumaFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
+            RequestedFormat::new::<LumaFormat>(RequestedFormatType::Exact(CameraFormat::new(
+                Resolution::new(640, 480),
+                nokhwa::utils::FrameFormat::YUYV,
+                30,
+            )));
 
         let first_camera = match cameras.first() {
             Some(c) => c,
             _ => return Err("Couldn't connect to the camera.".into()),
         };
 
-        let mut luma_threaded =
-            CallbackCamera::new(first_camera.index().clone(), luma_format, |buffer| {
-                let _luma_image = buffer.decode_image::<LumaFormat>().unwrap();
-            })?;
-        let mut rgb_threaded =
-            CallbackCamera::new(first_camera.index().clone(), rgb_format, |buffer| {
-                let _rgb_image = buffer.decode_image::<RgbFormat>().unwrap();
-            })?;
+        let mut luma_threaded = Camera::new(first_camera.index().clone(), luma_format)?;
+        let mut rgb_threaded = Camera::new(first_camera.index().clone(), rgb_format)?;
 
         luma_threaded.open_stream()?;
         rgb_threaded.open_stream()?;
@@ -58,11 +66,14 @@ impl WebCam {
         ),
         Box<dyn Error>,
     > {
-        let luma_frame = self.luma.poll_frame()?;
-        let luma_image = luma_frame.decode_image::<LumaFormat>()?;
+        let luma_frame = self.luma.frame()?;
+        let mut luma_image = luma_frame.decode_image::<LumaFormat>()?;
+        brighten_in_place(&mut luma_image, 70);
+        contrast_in_place(&mut luma_image, 10.);
 
-        let rgb_frame = self.rgb.poll_frame()?;
-        let rgb_image = rgb_frame.decode_image::<RgbFormat>()?;
+        let rgb_frame = self.rgb.frame()?;
+        let mut rgb_image = rgb_frame.decode_image::<RgbFormat>()?;
+        brighten_in_place(&mut rgb_image, 40);
 
         Ok((luma_image, rgb_image))
     }

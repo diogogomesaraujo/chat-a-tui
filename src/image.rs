@@ -49,7 +49,7 @@ impl Image {
         buffer_writer: &mut BufferWriter,
     ) -> Result<(), Box<dyn Error>> {
         let mut stdout = stdout();
-        write!(stdout, "{}", termion::clear::All)?;
+        write!(stdout, "{}", termion::clear::AfterCursor)?;
         stdout.flush()?;
 
         self.image
@@ -113,7 +113,7 @@ impl Frame {
         buffer_writer: &mut BufferWriter,
     ) -> Result<(), Box<dyn Error>> {
         let mut stdout = stdout();
-        write!(stdout, "{}", termion::clear::All)?;
+        write!(stdout, "{}", termion::clear::AfterCursor)?;
         stdout.flush()?;
 
         self.luma
