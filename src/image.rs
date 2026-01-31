@@ -1,44 +1,42 @@
 use crate::FILTER;
-use image::{DynamicImage, ImageReader};
+use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use std::io::Write;
 use std::{error::Error, io::stdout};
 use termcolor::{BufferWriter, Color, ColorSpec, WriteColor};
 use termion::terminal_size;
 
 #[derive(Clone)]
-pub struct FrameSize {
+pub struct ImageSize {
     pub x: u16,
     pub y: u16,
 }
 
-impl FrameSize {
+impl ImageSize {
     pub fn new(x: u16, y: u16) -> Self {
         Self { x, y }
     }
 }
 
 #[derive(Clone)]
-pub struct Frame {
+pub struct Image {
     pub image: DynamicImage,
-    pub frame_size: FrameSize,
+    pub size: ImageSize,
 }
 
-impl Frame {
-    pub fn from_path(path: &str, frame_size: FrameSize) -> Result<Self, Box<dyn Error>> {
+impl Image {
+    pub fn from_path(path: &str, size: ImageSize) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            image: ImageReader::open(path)?.decode()?.resize(
-                frame_size.x as u32,
-                frame_size.y as u32,
-                FILTER,
-            ),
-            frame_size,
+            image: ImageReader::open(path)?
+                .decode()?
+                .resize(size.x as u32, size.y as u32, FILTER),
+            size,
         })
     }
 
     pub fn new(image: DynamicImage, size_x: u16, size_y: u16) -> Self {
         Self {
             image,
-            frame_size: FrameSize {
+            size: ImageSize {
                 x: size_x,
                 y: size_y,
             },
@@ -86,6 +84,69 @@ impl Frame {
     }
 }
 
+pub struct Frame {
+    pub luma: ImageBuffer<Luma<u8>, Vec<u8>>,
+    pub rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    pub frame_size: ImageSize,
+}
+
+impl Frame {
+    pub fn new(
+        luma: ImageBuffer<Luma<u8>, Vec<u8>>,
+        rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
+        size_x: u16,
+        size_y: u16,
+    ) -> Self {
+        Self {
+            luma,
+            rgb,
+            frame_size: ImageSize {
+                x: size_x,
+                y: size_y,
+            },
+        }
+    }
+
+    pub fn clear_and_draw(
+        &self,
+        encoding: &AsciiEncoding,
+        buffer_writer: &mut BufferWriter,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut stdout = stdout();
+        write!(stdout, "{}", termion::clear::All)?;
+        stdout.flush()?;
+
+        self.luma
+            .enumerate_pixels()
+            .zip(self.rgb.enumerate_pixels())
+            .try_for_each(
+                |((luma_x, _, luma_pixel), (_, _, rgb_pixel))| -> Result<(), Box<dyn Error>> {
+                    let mut buffer = buffer_writer.buffer();
+                    buffer.set_color(ColorSpec::new().set_fg(Some(Color::Rgb(
+                        rgb_pixel[0],
+                        rgb_pixel[1],
+                        rgb_pixel[2],
+                    ))))?;
+
+                    if luma_x == 0 {
+                        write!(buffer, "\n")?;
+                    }
+
+                    let char_to_print = encoding.from_greyscale_value8(luma_pixel[0]);
+
+                    write!(buffer, "{char_to_print}{char_to_print}")?;
+                    buffer_writer.print(&buffer)?;
+
+                    Ok(())
+                },
+            )?;
+
+        stdout.flush()?;
+
+        Ok(())
+    }
+}
+
 pub struct AsciiEncoding(pub Vec<char>);
 
 impl AsciiEncoding {
@@ -102,10 +163,38 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn draw(&mut self, frame: Frame, encoding: &AsciiEncoding) -> Result<(), Box<dyn Error>> {
+    pub fn draw_image(
+        &mut self,
+        image: Image,
+        encoding: &AsciiEncoding,
+    ) -> Result<(), Box<dyn Error>> {
         let frame = match terminal_size() {
-            Ok((x, y)) => Frame::new(frame.image.resize(x as u32, y as u32, FILTER), x, y),
-            Err(_) => frame,
+            Ok((x, y)) => Image::new(image.image.resize(x as u32, y as u32, FILTER), x, y),
+            Err(_) => image,
+        };
+        frame.clear_and_draw(encoding, &mut self.buffer_writer)?;
+
+        Ok(())
+    }
+    pub fn draw_frame(
+        &mut self,
+        luma: ImageBuffer<Luma<u8>, Vec<u8>>,
+        rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
+        encoding: &AsciiEncoding,
+    ) -> Result<(), Box<dyn Error>> {
+        let frame = match terminal_size() {
+            Ok((x, y)) => Frame::new(
+                image::imageops::resize(&luma, x as u32 / 2, y as u32, FILTER),
+                image::imageops::resize(&rgb, x as u32 / 2, y as u32, FILTER),
+                x / 2,
+                y,
+            ),
+            Err(_) => Frame::new(
+                image::imageops::resize(&luma, 50, 50, FILTER),
+                image::imageops::resize(&rgb, 50, 50, FILTER),
+                50,
+                50,
+            ),
         };
         frame.clear_and_draw(encoding, &mut self.buffer_writer)?;
 
