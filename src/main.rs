@@ -1,22 +1,18 @@
 use std::error::Error;
 use termcolor::BufferWriter;
-use tui_video_chat::{
-    image::{AsciiEncoding, Window},
-    web_cam::WebCam,
-};
+use tui_video_chat::image::{AsciiEncoding, Window};
 
 const ENCODING: &[char] = &[':', '-', '=', '+', '*', '%', '@', '#'];
-const _ENCODING_REVERSED: &[char] = &['#', '@', '%', '*', '+', '=', '-', ':'];
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     let encoding = AsciiEncoding(ENCODING.to_vec());
+
     let mut window = Window {
         buffer_writer: BufferWriter::stdout(termcolor::ColorChoice::Auto),
     };
 
-    let mut cam = WebCam::new()?;
-    loop {
-        let (luma, rgb) = cam.get_frame_luma_rgb()?;
-        window.draw_frame(luma, rgb, &encoding)?;
-    }
+    window.show_screen_capture_feed_single_buffer(&encoding)?;
+
+    Ok(())
 }

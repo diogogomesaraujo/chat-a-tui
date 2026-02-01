@@ -1,8 +1,11 @@
-use crate::FILTER;
+use crate::web_cam::WebCam;
+use crate::{FILTER, screen_capture::Screen};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
+use std::error::Error;
 use std::io::Write;
-use std::{error::Error, io::stdout};
-use termcolor::{BufferWriter, Color, ColorSpec, WriteColor};
+use std::thread::sleep;
+use std::time::Duration;
+use termcolor::{Buffer, BufferWriter, Color, ColorSpec, WriteColor};
 use termion::terminal_size;
 
 #[derive(Clone)]
@@ -43,14 +46,12 @@ impl Image {
         }
     }
 
-    pub fn clear_and_draw(
+    pub fn load_buffer(
         &self,
         encoding: &AsciiEncoding,
-        buffer_writer: &mut BufferWriter,
+        buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        let mut stdout = stdout();
-        write!(stdout, "{}", termion::clear::AfterCursor)?;
-        stdout.flush()?;
+        write!(buffer, "{}", termion::clear::AfterCursor)?;
 
         self.image
             .to_luma8()
@@ -58,7 +59,6 @@ impl Image {
             .zip(self.image.to_rgb8().enumerate_pixels())
             .try_for_each(
                 |((luma_x, _, luma_pixel), (_, _, rgb_pixel))| -> Result<(), Box<dyn Error>> {
-                    let mut buffer = buffer_writer.buffer();
                     buffer.set_color(ColorSpec::new().set_fg(Some(Color::Rgb(
                         rgb_pixel[0],
                         rgb_pixel[1],
@@ -72,13 +72,10 @@ impl Image {
                     let char_to_print = encoding.from_greyscale_value8(luma_pixel[0]);
 
                     write!(buffer, "{char_to_print}{char_to_print}")?;
-                    buffer_writer.print(&buffer)?;
 
                     Ok(())
                 },
             )?;
-
-        stdout.flush()?;
 
         Ok(())
     }
@@ -107,21 +104,18 @@ impl Frame {
         }
     }
 
-    pub fn clear_and_draw(
+    pub fn load_buffer(
         &self,
         encoding: &AsciiEncoding,
-        buffer_writer: &mut BufferWriter,
+        buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        let mut stdout = stdout();
-        write!(stdout, "{}", termion::clear::AfterCursor)?;
-        stdout.flush()?;
+        write!(buffer, "{}", termion::clear::AfterCursor)?;
 
         self.luma
             .enumerate_pixels()
             .zip(self.rgb.enumerate_pixels())
             .try_for_each(
                 |((luma_x, _, luma_pixel), (_, _, rgb_pixel))| -> Result<(), Box<dyn Error>> {
-                    let mut buffer = buffer_writer.buffer();
                     buffer.set_color(ColorSpec::new().set_fg(Some(Color::Rgb(
                         rgb_pixel[0],
                         rgb_pixel[1],
@@ -135,13 +129,10 @@ impl Frame {
                     let char_to_print = encoding.from_greyscale_value8(luma_pixel[0]);
 
                     write!(buffer, "{char_to_print}{char_to_print}")?;
-                    buffer_writer.print(&buffer)?;
 
                     Ok(())
                 },
             )?;
-
-        stdout.flush()?;
 
         Ok(())
     }
@@ -172,16 +163,36 @@ impl Window {
             Ok((x, y)) => Image::new(image.image.resize(x as u32, y as u32, FILTER), x, y),
             Err(_) => image,
         };
-        frame.clear_and_draw(encoding, &mut self.buffer_writer)?;
+        let mut buffer = self.buffer_writer.buffer();
+
+        frame.load_buffer(encoding, &mut buffer)?;
+
+        self.buffer_writer.print(&mut buffer)?;
+        buffer.clear();
 
         Ok(())
     }
-    pub fn draw_frame(
+
+    pub fn draw_frame_single_buffer(
         &mut self,
         luma: ImageBuffer<Luma<u8>, Vec<u8>>,
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
         encoding: &AsciiEncoding,
     ) -> Result<(), Box<dyn Error>> {
+        let mut buffer = self.preprocess_frame_buffer(luma, rgb, encoding)?;
+
+        self.buffer_writer.print(&mut buffer)?;
+        buffer.clear();
+
+        Ok(())
+    }
+
+    pub fn preprocess_frame_buffer(
+        &mut self,
+        luma: ImageBuffer<Luma<u8>, Vec<u8>>,
+        rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
+        encoding: &AsciiEncoding,
+    ) -> Result<Buffer, Box<dyn Error>> {
         let frame = match terminal_size() {
             Ok((x, y)) => Frame::new(
                 image::imageops::resize(&luma, x as u32 / 2, y as u32, FILTER),
@@ -196,8 +207,33 @@ impl Window {
                 50,
             ),
         };
-        frame.clear_and_draw(encoding, &mut self.buffer_writer)?;
 
-        Ok(())
+        let mut buffer = self.buffer_writer.buffer();
+        frame.load_buffer(encoding, &mut buffer)?;
+
+        Ok(buffer)
+    }
+
+    pub fn show_webcam_feed_single_buffer(
+        &mut self,
+        encoding: &AsciiEncoding,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut cam = WebCam::new()?;
+        loop {
+            let (luma, rgb) = cam.get_frame_luma_rgb()?;
+            self.draw_frame_single_buffer(luma, rgb, &encoding)?;
+        }
+    }
+
+    pub fn show_screen_capture_feed_single_buffer(
+        &mut self,
+        encoding: &AsciiEncoding,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut screen = Screen::new()?;
+        loop {
+            sleep(Duration::from_micros(50));
+            let (luma, rgb) = screen.get_frame_luma_rgb()?;
+            self.draw_frame_single_buffer(luma, rgb, &encoding)?;
+        }
     }
 }

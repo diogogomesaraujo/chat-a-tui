@@ -1,9 +1,6 @@
 use image::{
     ImageBuffer, Luma, Rgb,
-    imageops::{
-        colorops::{brighten_in_place, contrast_in_place},
-        contrast,
-    },
+    imageops::colorops::{brighten_in_place, contrast_in_place},
 };
 use nokhwa::{
     Camera, nokhwa_initialize,
@@ -68,7 +65,7 @@ impl WebCam {
     > {
         let luma_frame = self.luma.frame()?;
         let mut luma_image = luma_frame.decode_image::<LumaFormat>()?;
-        brighten_in_place(&mut luma_image, 70);
+        brighten_in_place(&mut luma_image, 20);
         contrast_in_place(&mut luma_image, 10.);
 
         let rgb_frame = self.rgb.frame()?;
