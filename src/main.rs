@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         buffer_writer: BufferWriter::stdout(termcolor::ColorChoice::Auto),
     };
 
-    window.show_screen_capture_feed_single_buffer(&encoding)?;
+    window.show_webcam_feed_single_buffer(&encoding)?;
 
     Ok(())
 }

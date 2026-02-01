@@ -18,7 +18,6 @@ impl WebCam {
             println!("Access granted: {}.", granted);
         });
         let cameras = query(ApiBackend::Auto)?;
-        cameras.iter().for_each(|cam| println!("{:?}", cam));
 
         let rgb_format =
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(CameraFormat::new(
