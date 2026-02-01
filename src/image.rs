@@ -1,9 +1,12 @@
 use crate::web_cam::WebCam;
 use crate::{FILTER, screen_capture::Screen};
+use async_rate_limiter::RateLimiter;
 use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use std::error::Error;
 use std::io::Write;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use termcolor::{Buffer, BufferWriter, Color, ColorSpec, WriteColor};
 use termion::terminal_size;
 
@@ -50,7 +53,7 @@ impl Image {
         encoding: &AsciiEncoding,
         buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        write!(buffer, "{}", termion::clear::AfterCursor)?;
+        write!(buffer, "{}", termion::clear::All)?;
 
         self.image
             .to_luma8()
@@ -108,7 +111,7 @@ impl Frame {
         encoding: &AsciiEncoding,
         buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        write!(buffer, "{}", termion::clear::AfterCursor)?;
+        write!(buffer, "{}", termion::clear::All)?;
 
         self.luma
             .enumerate_pixels()
@@ -153,6 +156,12 @@ pub struct Window {
 }
 
 impl Window {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            buffer_writer: BufferWriter::alternate_stdout(termcolor::ColorChoice::Auto)?,
+        })
+    }
+
     pub fn draw_image(
         &mut self,
         image: Image,
@@ -191,6 +200,7 @@ impl Window {
         encoding: &AsciiEncoding,
     ) -> Result<Buffer, Box<dyn Error>> {
         let (mut rgb, x, y) = match terminal_size() {
+            Ok((x, y)) if x > 400 || y > 300 => return Ok(self.buffer_writer.buffer()),
             Ok((x, y)) => (
                 image::imageops::resize(&rgb, x as u32 / 2, y as u32, FILTER),
                 x,
@@ -216,25 +226,33 @@ impl Window {
         Ok(buffer)
     }
 
-    pub fn show_webcam_feed_single_buffer(
+    pub async fn show_webcam_feed_single_buffer(
         &mut self,
         encoding: &AsciiEncoding,
+        end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error>> {
         let mut cam = WebCam::new()?;
-        loop {
+
+        while end_flag.load(std::sync::atomic::Ordering::SeqCst) == false {
             let rgb = cam.get_frame_rgb()?;
             self.draw_frame_single_buffer(rgb, &encoding)?;
         }
+
+        Ok(())
     }
 
-    pub fn show_screen_capture_feed_single_buffer(
+    pub async fn show_screen_capture_feed_single_buffer(
         &mut self,
         encoding: &AsciiEncoding,
+        end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error>> {
         let mut screen = Screen::new()?;
-        loop {
+
+        while end_flag.load(std::sync::atomic::Ordering::SeqCst) == false {
             let rgb = screen.get_frame_rgb()?;
             self.draw_frame_single_buffer(rgb, &encoding)?;
         }
+
+        Ok(())
     }
 }
