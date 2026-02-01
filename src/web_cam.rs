@@ -1,18 +1,14 @@
-use image::{
-    ImageBuffer, Luma, Rgb,
-    imageops::colorops::{brighten_in_place, contrast_in_place},
-};
+use image::{ImageBuffer, Rgb};
 use nokhwa::{
     Camera, nokhwa_initialize,
-    pixel_format::{LumaFormat, RgbFormat},
+    pixel_format::RgbFormat,
     query,
     utils::{ApiBackend, CameraFormat, RequestedFormat, RequestedFormatType, Resolution},
 };
 use std::error::Error;
 
 pub struct WebCam {
-    pub luma: Camera,
-    pub rgb: Camera,
+    pub camera: Camera,
 }
 
 impl WebCam {
@@ -30,48 +26,23 @@ impl WebCam {
                 nokhwa::utils::FrameFormat::YUYV,
                 30,
             )));
-        let luma_format =
-            RequestedFormat::new::<LumaFormat>(RequestedFormatType::Exact(CameraFormat::new(
-                Resolution::new(640, 480),
-                nokhwa::utils::FrameFormat::YUYV,
-                30,
-            )));
 
         let first_camera = match cameras.first() {
             Some(c) => c,
             _ => return Err("Couldn't connect to the camera.".into()),
         };
 
-        let mut luma_threaded = Camera::new(first_camera.index().clone(), luma_format)?;
-        let mut rgb_threaded = Camera::new(first_camera.index().clone(), rgb_format)?;
+        let mut threaded = Camera::new(first_camera.index().clone(), rgb_format)?;
 
-        luma_threaded.open_stream()?;
-        rgb_threaded.open_stream()?;
+        threaded.open_stream()?;
 
-        Ok(Self {
-            luma: luma_threaded,
-            rgb: rgb_threaded,
-        })
+        Ok(Self { camera: threaded })
     }
 
-    pub fn get_frame_luma_rgb(
-        &mut self,
-    ) -> Result<
-        (
-            ImageBuffer<Luma<u8>, Vec<u8>>,
-            ImageBuffer<Rgb<u8>, Vec<u8>>,
-        ),
-        Box<dyn Error>,
-    > {
-        let luma_frame = self.luma.frame()?;
-        let mut luma_image = luma_frame.decode_image::<LumaFormat>()?;
-        brighten_in_place(&mut luma_image, 20);
-        contrast_in_place(&mut luma_image, 10.);
+    pub fn get_frame_rgb(&mut self) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn Error>> {
+        let rgb_frame = self.camera.frame()?;
+        let rgb_image = rgb_frame.decode_image::<RgbFormat>()?;
 
-        let rgb_frame = self.rgb.frame()?;
-        let mut rgb_image = rgb_frame.decode_image::<RgbFormat>()?;
-        brighten_in_place(&mut rgb_image, 40);
-
-        Ok((luma_image, rgb_image))
+        Ok(rgb_image)
     }
 }

@@ -1,10 +1,9 @@
 use crate::web_cam::WebCam;
 use crate::{FILTER, screen_capture::Screen};
+use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use std::error::Error;
 use std::io::Write;
-use std::thread::sleep;
-use std::time::Duration;
 use termcolor::{Buffer, BufferWriter, Color, ColorSpec, WriteColor};
 use termion::terminal_size;
 
@@ -175,11 +174,10 @@ impl Window {
 
     pub fn draw_frame_single_buffer(
         &mut self,
-        luma: ImageBuffer<Luma<u8>, Vec<u8>>,
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
         encoding: &AsciiEncoding,
     ) -> Result<(), Box<dyn Error>> {
-        let mut buffer = self.preprocess_frame_buffer(luma, rgb, encoding)?;
+        let mut buffer = self.preprocess_frame_buffer(rgb, encoding)?;
 
         self.buffer_writer.print(&mut buffer)?;
         buffer.clear();
@@ -189,24 +187,28 @@ impl Window {
 
     pub fn preprocess_frame_buffer(
         &mut self,
-        luma: ImageBuffer<Luma<u8>, Vec<u8>>,
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
         encoding: &AsciiEncoding,
     ) -> Result<Buffer, Box<dyn Error>> {
-        let frame = match terminal_size() {
-            Ok((x, y)) => Frame::new(
-                image::imageops::resize(&luma, x as u32 / 2, y as u32, FILTER),
+        let (mut rgb, x, y) = match terminal_size() {
+            Ok((x, y)) => (
                 image::imageops::resize(&rgb, x as u32 / 2, y as u32, FILTER),
-                x / 2,
+                x,
                 y,
             ),
-            Err(_) => Frame::new(
-                image::imageops::resize(&luma, 50, 50, FILTER),
-                image::imageops::resize(&rgb, 50, 50, FILTER),
-                50,
-                50,
+            Err(_) => (
+                rgb.clone(),
+                rgb.width().clone() as u16,
+                rgb.height().clone() as u16,
             ),
         };
+        brighten_in_place(&mut rgb, 40);
+
+        let mut luma = DynamicImage::ImageRgb8(rgb.clone()).into_luma8();
+        brighten_in_place(&mut luma, 20);
+        contrast_in_place(&mut luma, 10.);
+
+        let frame = Frame::new(luma, rgb, x, y);
 
         let mut buffer = self.buffer_writer.buffer();
         frame.load_buffer(encoding, &mut buffer)?;
@@ -220,8 +222,8 @@ impl Window {
     ) -> Result<(), Box<dyn Error>> {
         let mut cam = WebCam::new()?;
         loop {
-            let (luma, rgb) = cam.get_frame_luma_rgb()?;
-            self.draw_frame_single_buffer(luma, rgb, &encoding)?;
+            let rgb = cam.get_frame_rgb()?;
+            self.draw_frame_single_buffer(rgb, &encoding)?;
         }
     }
 
@@ -231,9 +233,8 @@ impl Window {
     ) -> Result<(), Box<dyn Error>> {
         let mut screen = Screen::new()?;
         loop {
-            sleep(Duration::from_micros(50));
-            let (luma, rgb) = screen.get_frame_luma_rgb()?;
-            self.draw_frame_single_buffer(luma, rgb, &encoding)?;
+            let rgb = screen.get_frame_rgb()?;
+            self.draw_frame_single_buffer(rgb, &encoding)?;
         }
     }
 }
