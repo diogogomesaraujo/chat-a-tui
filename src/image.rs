@@ -4,11 +4,8 @@ use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, ImageReader, Luma, Rgb};
 use std::error::Error;
 use std::io::Write;
-use std::sync::Arc;
 use termcolor::{Buffer, BufferWriter, Color, ColorSpec, WriteColor};
-use termion::clear::{self};
 use termion::terminal_size;
-use tokio::sync::{Notify, RwLock};
 
 #[derive(Clone)]
 pub struct ImageSize {
@@ -53,7 +50,7 @@ impl Image {
         encoding: &AsciiEncoding,
         buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        write!(buffer, "{}", clear::AfterCursor)?;
+        write!(buffer, "{}", termion::clear::AfterCursor)?;
 
         self.image
             .to_luma8()
@@ -111,7 +108,7 @@ impl Frame {
         encoding: &AsciiEncoding,
         buffer: &mut Buffer,
     ) -> Result<(), Box<dyn Error>> {
-        write!(buffer, "{}", clear::AfterCursor)?;
+        write!(buffer, "{}", termion::clear::AfterCursor)?;
 
         self.luma
             .enumerate_pixels()
@@ -156,11 +153,6 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            buffer_writer: BufferWriter::alternate_stdout(termcolor::ColorChoice::Auto)?,
-        })
-    }
     pub fn draw_image(
         &mut self,
         image: Image,
@@ -188,6 +180,7 @@ impl Window {
         let mut buffer = self.preprocess_frame_buffer(rgb, encoding)?;
 
         self.buffer_writer.print(&mut buffer)?;
+        buffer.clear();
 
         Ok(())
     }
@@ -231,56 +224,6 @@ impl Window {
         loop {
             let rgb = cam.get_frame_rgb()?;
             self.draw_frame_single_buffer(rgb, &encoding)?;
-        }
-    }
-
-    pub async fn show_webcam_feed_double_buffer(
-        self,
-        encoding: AsciiEncoding,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut cam = WebCam::new()?;
-
-        let buffer_one = Arc::new(RwLock::new(self.buffer_writer.buffer()));
-        let buffer_two = Arc::new(RwLock::new(self.buffer_writer.buffer()));
-
-        let notify_preprocessed = Arc::new(Notify::new());
-
-        let window = Arc::new(RwLock::new(self));
-        let encoding = Arc::new(encoding);
-
-        {
-            let window = window.clone();
-            let encoding = encoding.clone();
-
-            let buffer_one = buffer_one.clone();
-
-            let notify_preprocessed = notify_preprocessed.clone();
-
-            tokio::spawn(async move {
-                loop {
-                    // buffer one
-                    let rgb = cam.get_frame_rgb().unwrap();
-                    *buffer_one.write().await = window
-                        .write()
-                        .await
-                        .preprocess_frame_buffer(rgb, &encoding)
-                        .unwrap();
-
-                    notify_preprocessed.notify_one();
-                }
-            });
-        }
-
-        loop {
-            notify_preprocessed.notified().await;
-
-            *buffer_two.write().await = buffer_one.read().await.clone();
-
-            window
-                .write()
-                .await
-                .buffer_writer
-                .print(&mut *buffer_two.write().await)?;
         }
     }
 
