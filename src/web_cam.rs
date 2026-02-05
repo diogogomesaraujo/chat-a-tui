@@ -22,7 +22,7 @@ impl WebCam {
         let rgb_format =
             RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(CameraFormat::new(
                 Resolution::new(640, 480),
-                nokhwa::utils::FrameFormat::YUYV,
+                nokhwa::utils::FrameFormat::MJPEG,
                 30,
             )));
 

@@ -1,3 +1,4 @@
+use async_rate_limiter::RateLimiter;
 use std::{
     error::Error,
     io::{Write, stdout},
@@ -9,9 +10,6 @@ const ENCODING: &[char] = &[':', '-', '=', '+', '*', '%', '@', '#'];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let encoding = AsciiEncoding(ENCODING.to_vec());
-    let mut window = Window::new()?;
-
     let end_flag = Arc::new(AtomicBool::new(false));
     end_flag.load(std::sync::atomic::Ordering::SeqCst);
 
@@ -20,8 +18,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
     })?;
 
+    let window = Window::new()?;
+    let encoding = AsciiEncoding(ENCODING.to_vec());
+    let rate_limiter = RateLimiter::new(30);
+
     window
-        .show_webcam_feed_single_buffer(&encoding, end_flag)
+        .show_webcam_feed_triple_buffer(encoding, end_flag, rate_limiter)
         .await?;
 
     print!("{}", termion::clear::All);
