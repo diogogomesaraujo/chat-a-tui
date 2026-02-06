@@ -9,15 +9,14 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use termcolor::{Buffer, BufferWriter, Color, ColorSpec, WriteColor};
 use termion::terminal_size;
-use tokio::sync::RwLock;
 
 #[derive(Clone)]
-pub struct ImageSize {
+pub struct Size {
     pub x: u16,
     pub y: u16,
 }
 
-impl ImageSize {
+impl Size {
     pub fn new(x: u16, y: u16) -> Self {
         Self { x, y }
     }
@@ -26,11 +25,11 @@ impl ImageSize {
 #[derive(Clone)]
 pub struct Image {
     pub image: DynamicImage,
-    pub size: ImageSize,
+    pub size: Size,
 }
 
 impl Image {
-    pub fn from_path(path: &str, size: ImageSize) -> Result<Self, Box<dyn Error>> {
+    pub fn from_path(path: &str, size: Size) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
             image: ImageReader::open(path)?
                 .decode()?
@@ -42,7 +41,7 @@ impl Image {
     pub fn new(image: DynamicImage, size_x: u16, size_y: u16) -> Self {
         Self {
             image,
-            size: ImageSize {
+            size: Size {
                 x: size_x,
                 y: size_y,
             },
@@ -87,7 +86,7 @@ impl Image {
 pub struct Frame {
     pub luma: ImageBuffer<Luma<u8>, Vec<u8>>,
     pub rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
-    pub frame_size: ImageSize,
+    pub frame_size: Size,
 }
 
 impl Frame {
@@ -100,7 +99,7 @@ impl Frame {
         Self {
             luma,
             rgb,
-            frame_size: ImageSize {
+            frame_size: Size {
                 x: size_x,
                 y: size_y,
             },
@@ -153,53 +152,51 @@ impl AsciiEncoding {
 }
 
 pub struct Window {
-    pub buffer_writer: BufferWriter,
+    pub buffer_writer_front: BufferWriter,
+    pub buffer_writer_back: BufferWriter,
 }
 
 impl Window {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            buffer_writer: BufferWriter::alternate_stdout(termcolor::ColorChoice::Auto)?,
+            buffer_writer_front: BufferWriter::alternate_stdout(termcolor::ColorChoice::Auto)?,
+            buffer_writer_back: BufferWriter::alternate_stdout(termcolor::ColorChoice::Auto)?,
         })
     }
 
-    pub fn draw_image(
-        &mut self,
-        image: Image,
-        encoding: &AsciiEncoding,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn draw_image(&self, image: Image, encoding: &AsciiEncoding) -> Result<(), Box<dyn Error>> {
         let frame = match terminal_size() {
             Ok((x, y)) => Image::new(image.image.resize(x as u32, y as u32, FILTER), x, y),
             Err(_) => image,
         };
-        let mut buffer = self.buffer_writer.buffer();
+        let mut buffer = self.buffer_writer_back.buffer();
 
         frame.load_buffer(encoding, &mut buffer)?;
 
-        self.buffer_writer.print(&mut buffer)?;
+        self.buffer_writer_back.print(&mut buffer)?;
 
         Ok(())
     }
 
     pub fn draw_frame_single_buffer(
-        &mut self,
+        &self,
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
         encoding: &AsciiEncoding,
     ) -> Result<(), Box<dyn Error>> {
         let mut buffer = self.preprocess_frame_buffer(rgb, encoding)?;
 
-        self.buffer_writer.print(&mut buffer)?;
+        self.buffer_writer_back.print(&mut buffer)?;
 
         Ok(())
     }
 
     pub fn preprocess_frame_buffer(
-        &mut self,
+        &self,
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
         encoding: &AsciiEncoding,
     ) -> Result<Buffer, Box<dyn Error>> {
         let (mut rgb, x, y) = match terminal_size() {
-            Ok((x, y)) if x > 400 || y > 300 => return Ok(self.buffer_writer.buffer()),
+            Ok((x, y)) if x > 400 || y > 300 => return Ok(self.buffer_writer_back.buffer()),
             Ok((x, y)) => (
                 image::imageops::resize(&rgb, x as u32 / 2, y as u32, FILTER),
                 x,
@@ -219,14 +216,14 @@ impl Window {
 
         let frame = Frame::new(luma, rgb, x, y);
 
-        let mut buffer = self.buffer_writer.buffer();
+        let mut buffer = self.buffer_writer_back.buffer();
         frame.load_buffer(encoding, &mut buffer)?;
 
         Ok(buffer)
     }
 
     pub async fn show_webcam_feed_single_buffer(
-        &mut self,
+        &self,
         encoding: &AsciiEncoding,
         end_flag: Arc<AtomicBool>,
         rate_limiter: RateLimiter,
@@ -244,7 +241,7 @@ impl Window {
     }
 
     pub async fn show_screen_capture_feed_single_buffer(
-        &mut self,
+        &self,
         encoding: &AsciiEncoding,
         end_flag: Arc<AtomicBool>,
         rate_limiter: RateLimiter,
@@ -259,102 +256,5 @@ impl Window {
         }
 
         Ok(())
-    }
-
-    pub async fn show_webcam_feed_triple_buffer(
-        self,
-        encoding: AsciiEncoding,
-        end_flag: Arc<AtomicBool>,
-        rate_limiter: RateLimiter,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut cam = WebCam::new()?;
-
-        let encoding = Arc::new(encoding);
-
-        let triple_buffer = Arc::new(TripleBuffer::new(
-            self.buffer_writer.buffer(),
-            self.buffer_writer.buffer(),
-            self.buffer_writer.buffer(),
-        ));
-
-        let window = Arc::new(RwLock::new(self));
-
-        {
-            let window = window.clone();
-            let encoding = encoding.clone();
-
-            let end_flag = end_flag.clone();
-            let triple_buffer = triple_buffer.clone();
-
-            tokio::spawn(async move {
-                while end_flag.load(std::sync::atomic::Ordering::Relaxed) == false {
-                    let rgb = cam.get_frame_rgb().unwrap();
-                    *triple_buffer.back.write().await = window
-                        .write()
-                        .await
-                        .preprocess_frame_buffer(rgb, &encoding)
-                        .unwrap();
-
-                    triple_buffer.swap_back_spare().await;
-                    triple_buffer
-                        .has_update
-                        .swap(true, std::sync::atomic::Ordering::AcqRel);
-                }
-            });
-        }
-
-        while end_flag.load(std::sync::atomic::Ordering::Relaxed) == false {
-            rate_limiter.acquire().await;
-
-            if triple_buffer
-                .has_update
-                .load(std::sync::atomic::Ordering::Relaxed)
-            {
-                triple_buffer.swap_front_spare().await;
-                triple_buffer
-                    .has_update
-                    .swap(false, std::sync::atomic::Ordering::Relaxed);
-            }
-
-            window
-                .write()
-                .await
-                .buffer_writer
-                .print(&*triple_buffer.front.read().await)?;
-        }
-
-        Ok(())
-    }
-}
-
-pub struct TripleBuffer<T> {
-    front: RwLock<T>,
-    spare: RwLock<T>,
-    back: RwLock<T>,
-    has_update: AtomicBool,
-}
-
-impl<T> TripleBuffer<T> {
-    pub fn new(front: T, spare: T, back: T) -> Self {
-        Self {
-            front: RwLock::new(front),
-            spare: RwLock::new(back),
-            back: RwLock::new(spare),
-            has_update: AtomicBool::new(false),
-        }
-    }
-
-    pub async fn swap_front_spare(&self) {
-        std::mem::swap(
-            &mut *self.front.write().await,
-            &mut *self.spare.write().await,
-        );
-    }
-
-    pub async fn swap_back_spare(&self) {
-        std::mem::swap(
-            &mut *self.spare.write().await,
-            &mut *self.back.write().await,
-        );
     }
 }

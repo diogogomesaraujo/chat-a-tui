@@ -6,7 +6,7 @@ use std::{
 };
 use tui_video_chat::image::{AsciiEncoding, Window};
 
-const ENCODING: &[char] = &[':', '-', '=', '+', '*', '%', '@', '#'];
+const ENCODING: [char; 8] = [':', '-', '=', '+', '*', '%', '@', '#'];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -20,10 +20,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let window = Window::new()?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
-    let rate_limiter = RateLimiter::new(30);
+    let print_rate_limiter = RateLimiter::new(200);
 
     window
-        .show_webcam_feed_triple_buffer(encoding, end_flag, rate_limiter)
+        .show_screen_capture_feed_single_buffer(&encoding, end_flag, print_rate_limiter)
         .await?;
 
     print!("{}", termion::clear::All);

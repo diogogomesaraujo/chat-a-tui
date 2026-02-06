@@ -13,10 +13,10 @@ pub struct WebCam {
 
 impl WebCam {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        // only needs to be run on OSX
         nokhwa_initialize(|granted| {
             println!("Access granted: {}.", granted);
         });
+
         let cameras = query(ApiBackend::Auto)?;
 
         let rgb_format =
@@ -32,7 +32,6 @@ impl WebCam {
         };
 
         let mut threaded = Camera::new(first_camera.index().clone(), rgb_format)?;
-
         threaded.open_stream()?;
 
         Ok(Self { camera: threaded })
