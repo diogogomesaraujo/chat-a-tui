@@ -11,7 +11,7 @@ use termcolor::{Buffer, BufferWriter};
 use termion::terminal_size;
 
 #[async_trait]
-pub trait Feed: 'static {
+pub trait Feed {
     const FRAME_RATE: u32;
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
