@@ -11,7 +11,7 @@ use termcolor::{Buffer, BufferWriter};
 use termion::terminal_size;
 
 #[async_trait]
-pub trait Feed {
+pub trait Feed: 'static {
     const FRAME_RATE: u32;
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
@@ -66,13 +66,22 @@ pub trait Feed {
         let mut feed_source = Self::new()?;
         let rate_limiter = RateLimiter::new(Self::FRAME_RATE as usize);
 
+        let (mut input_buffer, mut output_buffer) =
+            triple_buffer::triple_buffer(&buffer_writer_producer.buffer());
+
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             rate_limiter.acquire().await;
 
             let rgb = feed_source.get_frame_rgb()?;
-            let buffer = Self::preprocess_frame_buffer(&buffer_writer_consumer, rgb, &encoding)?;
-            buffer_writer_producer.print(&buffer)?;
+            input_buffer.write(Self::preprocess_frame_buffer(
+                &buffer_writer_producer,
+                rgb,
+                &encoding,
+            )?);
+
+            buffer_writer_consumer.print(&output_buffer.read())?;
         }
+
         Ok(())
     }
 }

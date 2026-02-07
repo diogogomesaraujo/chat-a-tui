@@ -14,7 +14,7 @@ pub struct WebCam {
 }
 
 impl Feed for WebCam {
-    const FRAME_RATE: u32 = 200;
+    const FRAME_RATE: u32 = 60;
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         nokhwa_initialize(|granted| {
