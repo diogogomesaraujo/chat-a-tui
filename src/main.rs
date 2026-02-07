@@ -1,15 +1,15 @@
-use async_rate_limiter::RateLimiter;
 use std::{
     error::Error,
     io::{Write, stdout},
     sync::{Arc, atomic::AtomicBool},
 };
-use tui_video_chat::image::{AsciiEncoding, Window};
+use termcolor::BufferWriter;
+use tui_video_chat::{feed::frame::AsciiEncoding, web_cam::WebCam, window::Window};
 
 const ENCODING: [char; 8] = [':', '-', '=', '+', '*', '%', '@', '#'];
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let end_flag = Arc::new(AtomicBool::new(false));
     end_flag.load(std::sync::atomic::Ordering::SeqCst);
 
@@ -18,13 +18,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
     })?;
 
-    let window = Window::new()?;
+    let window = Window::new(BufferWriter::alternate_stdout)?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
-    let print_rate_limiter = RateLimiter::new(200);
 
-    window
-        .show_screen_capture_feed_single_buffer(&encoding, end_flag, print_rate_limiter)
-        .await?;
+    window.show_feed::<WebCam>(encoding, end_flag).await?;
 
     print!("{}", termion::clear::All);
     stdout().flush()?;

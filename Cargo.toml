@@ -16,3 +16,4 @@ xcap = "0.8.1"
 ctrlc = "3.5.1"
 my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
 async-rate-limiter = "1.1.0"
+async-trait = "0.1.89"

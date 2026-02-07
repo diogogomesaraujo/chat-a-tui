@@ -7,12 +7,16 @@ use nokhwa::{
 };
 use std::error::Error;
 
+use crate::feed::Feed;
+
 pub struct WebCam {
     pub camera: Camera,
 }
 
-impl WebCam {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+impl Feed for WebCam {
+    const FRAME_RATE: u32 = 200;
+
+    fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         nokhwa_initialize(|granted| {
             println!("Access granted: {}.", granted);
         });
@@ -37,7 +41,9 @@ impl WebCam {
         Ok(Self { camera: threaded })
     }
 
-    pub fn get_frame_rgb(&mut self) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn Error>> {
+    fn get_frame_rgb(
+        &mut self,
+    ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn Error + Send + Sync>> {
         let rgb_frame = self.camera.frame()?;
         let rgb_image = rgb_frame.decode_image::<RgbFormat>()?;
 
