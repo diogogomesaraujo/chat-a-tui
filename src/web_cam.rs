@@ -1,3 +1,4 @@
+use bincode::config::{self, Configuration};
 use image::{ImageBuffer, Rgb};
 use nokhwa::{
     Camera, nokhwa_initialize,
@@ -14,7 +15,8 @@ pub struct WebCam {
 }
 
 impl Feed for WebCam {
-    const FRAME_RATE: u32 = 60;
+    const FRAME_RATE: u32 = 600;
+    const ENCODE_CONFIG: Configuration = config::standard();
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         nokhwa_initialize(|granted| {

@@ -1,4 +1,5 @@
 use termcolor::{BufferWriter, ColorChoice};
+use tokio::net::UdpSocket;
 
 use crate::feed::Feed;
 use crate::feed::frame::AsciiEncoding;
@@ -6,8 +7,7 @@ use std::error::Error;
 use std::sync::{Arc, atomic::AtomicBool};
 
 pub struct Window {
-    buffer_writer_consumer: BufferWriter,
-    buffer_writer_producer: BufferWriter,
+    buffer_writer: BufferWriter,
 }
 
 impl Window {
@@ -17,8 +17,7 @@ impl Window {
         stdout: fn(ColorChoice) -> Result<BufferWriter, Box<dyn Error + Send + Sync>>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self {
-            buffer_writer_consumer: stdout(Self::COLOR_CHOICE)?,
-            buffer_writer_producer: stdout(Self::COLOR_CHOICE)?,
+            buffer_writer: stdout(Self::COLOR_CHOICE)?,
         })
     }
 
@@ -27,12 +26,23 @@ impl Window {
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        T::show(
-            self.buffer_writer_consumer,
-            self.buffer_writer_producer,
-            encoding,
-            end_flag,
-        )
-        .await
+        T::show(self.buffer_writer, encoding, end_flag).await
+    }
+
+    pub async fn stream_feed<T: Feed + Send>(
+        self,
+        connection: UdpSocket,
+        end_flag: Arc<AtomicBool>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        T::stream(connection, end_flag).await
+    }
+
+    pub async fn show_stream_feed<T: Feed + Send>(
+        self,
+        connection: UdpSocket,
+        encoding: AsciiEncoding,
+        end_flag: Arc<AtomicBool>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        T::show_stream(self.buffer_writer, connection, &encoding, end_flag).await
     }
 }

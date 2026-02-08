@@ -4,17 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-image = "0.25.9"
 imageproc = "0.26.0"
-termcolor = { git = "https://github.com/diogogomesaraujo/termcolor.git" }
 termion = "4.0.6"
 nokhwa = { version = "0.10.3", features=["input-native", "output-threaded"] }
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.17"
-xcap = "0.8.1"
 ctrlc = "3.5.1"
-my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
 async-rate-limiter = "1.1.0"
 async-trait = "0.1.89"
 triple_buffer = "8.1.1"
+bincode = "2.0.0"
+xcap = "0.8.1"
+termcolor = { git = "https://github.com/diogogomesaraujo/termcolor.git" }
+my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
+image = "0.25.9"
