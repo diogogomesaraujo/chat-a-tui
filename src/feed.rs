@@ -1,3 +1,4 @@
+use crate::FILTER;
 use crate::feed::frame::{AsciiEncoding, Frame, Image};
 use async_rate_limiter::RateLimiter;
 use async_trait::async_trait;
@@ -17,6 +18,7 @@ pub trait Feed: 'static {
     const FRAME_RATE: u32;
     const ENCODE_CONFIG: Configuration;
     const TIMEOUT_DURATION: Duration;
+    const STREAM_FRAME_SIZE: (u32, u32) = (60, 30);
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
     where
@@ -96,7 +98,13 @@ pub trait Feed: 'static {
 
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             let rgb = feed_source.get_frame_rgb()?;
-            let frame = Self::preprocess_frame(rgb)?;
+            let frame = Image(image::imageops::resize(
+                &rgb,
+                Self::STREAM_FRAME_SIZE.0,
+                Self::STREAM_FRAME_SIZE.1,
+                FILTER,
+            ))
+            .into_frame();
             input_buffer.write(Self::encode_frame(frame)?);
 
             connection.send(&output_buffer.read()).await?;
