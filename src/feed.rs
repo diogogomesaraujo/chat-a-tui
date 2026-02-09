@@ -1,5 +1,4 @@
-use crate::FILTER;
-use crate::feed::frame::{AsciiEncoding, Frame};
+use crate::feed::frame::{AsciiEncoding, Frame, Image};
 use async_rate_limiter::RateLimiter;
 use async_trait::async_trait;
 use bincode::config::Configuration;
@@ -10,7 +9,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use termcolor::BufferWriter;
-use termion::terminal_size;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 
@@ -31,25 +29,15 @@ pub trait Feed: 'static {
     fn preprocess_frame(
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
     ) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (mut rgb, x, y) = match terminal_size() {
-            Ok((x, y)) => (
-                image::imageops::resize(&rgb, x as u32 / 2, y as u32, FILTER),
-                x,
-                y,
-            ),
-            Err(_) => (
-                rgb.clone(),
-                rgb.width().clone() as u16,
-                rgb.height().clone() as u16,
-            ),
-        };
-        brighten_in_place(&mut rgb, 40);
+        let (mut rgb, x, y) = Image(rgb).image_to_terminal_size();
 
-        let mut luma = DynamicImage::ImageRgb8(rgb.clone()).into_luma8();
+        brighten_in_place(rgb.buffer_mut(), 40);
+
+        let mut luma = DynamicImage::ImageRgb8(rgb.buffer().clone()).into_luma8();
         brighten_in_place(&mut luma, 20);
         contrast_in_place(&mut luma, 10.);
 
-        let frame = Frame::new(luma, rgb, x, y);
+        let frame = Frame::new(luma, rgb.buffer_consume(), x, y);
 
         Ok(frame)
     }
@@ -140,7 +128,10 @@ pub trait Feed: 'static {
             {
                 continue;
             }
-            let frame = Self::decode_frame(&buffer_temp)?;
+            let (resized_image, _, _) = Self::decode_frame(&buffer_temp)?
+                .into_image()
+                .image_to_terminal_size();
+            let frame = resized_image.into_frame();
 
             let mut buffer = buffer_writer.buffer();
             frame.load_buffer(&encoding, &mut buffer)?;
@@ -155,10 +146,13 @@ pub trait Feed: 'static {
 
 pub mod frame {
     use bincode::{Decode, Encode};
-    use image::{ImageBuffer, Luma, Rgb};
+    use image::{DynamicImage, ImageBuffer, Luma, Rgb};
     use std::error::Error;
     use std::io::Write;
     use termcolor::{Buffer, Color, ColorSpec, WriteColor};
+    use termion::terminal_size;
+
+    use crate::FILTER;
 
     #[derive(Clone, Encode, Decode)]
     pub struct Size {
@@ -241,12 +235,12 @@ pub mod frame {
             Ok(())
         }
 
-        pub fn to_image_buffer(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-            let mut image = ImageBuffer::new(self.frame_size.x as u32, self.frame_size.y as u32);
+        pub fn into_image(&self) -> Image {
+            let mut image = Image::new(self.frame_size.x as u32, self.frame_size.y as u32);
             self.pixels.iter().enumerate().for_each(|(i, p)| {
                 let x = i as u32 % self.frame_size.x as u32;
                 let y = i as u32 / self.frame_size.x as u32;
-                image.put_pixel(
+                image.buffer_mut().put_pixel(
                     x,
                     y,
                     Rgb {
@@ -267,6 +261,54 @@ pub mod frame {
             let range = u8::MAX;
 
             self.0[value as usize * encodings_len as usize / range as usize]
+        }
+    }
+
+    pub struct Image(pub ImageBuffer<Rgb<u8>, Vec<u8>>);
+
+    impl Image {
+        pub fn new(x: u32, y: u32) -> Self {
+            Self(ImageBuffer::new(x, y))
+        }
+
+        pub fn image_to_terminal_size(self) -> (Self, u16, u16) {
+            match terminal_size() {
+                Ok((x, y)) => (
+                    Self(image::imageops::resize(
+                        &self.0,
+                        x as u32 / 2,
+                        y as u32,
+                        FILTER,
+                    )),
+                    x / 2,
+                    y,
+                ),
+                Err(_) => {
+                    let (x, y) = (
+                        self.0.width().clone() as u16,
+                        self.0.height().clone() as u16,
+                    );
+                    (self, x / 2, y)
+                }
+            }
+        }
+
+        pub fn into_frame(self) -> Frame {
+            let luma = DynamicImage::ImageRgb8(self.buffer().clone()).into_luma8();
+            let (x, y) = (self.0.width() as u16, self.0.height() as u16);
+            Frame::new(luma, self.0, x, y)
+        }
+
+        pub fn buffer(&self) -> &ImageBuffer<Rgb<u8>, Vec<u8>> {
+            &self.0
+        }
+
+        pub fn buffer_consume(self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+            self.0
+        }
+
+        pub fn buffer_mut(&mut self) -> &mut ImageBuffer<Rgb<u8>, Vec<u8>> {
+            &mut self.0
         }
     }
 }
