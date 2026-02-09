@@ -89,7 +89,8 @@ pub trait Feed: 'static {
     }
 
     fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, Self::ENCODE_CONFIG)?;
+        let (decoded, _): (Frame, usize) =
+            bincode::decode_from_slice(&bytes[..], Self::ENCODE_CONFIG)?;
 
         Ok(decoded)
     }
@@ -139,7 +140,7 @@ pub trait Feed: 'static {
             {
                 continue;
             }
-            let frame = &Self::decode_frame(&buffer_temp)?;
+            let frame = Self::decode_frame(&buffer_temp)?;
 
             let mut buffer = buffer_writer.buffer();
             frame.load_buffer(&encoding, &mut buffer)?;
@@ -215,7 +216,7 @@ pub mod frame {
             encoding: &AsciiEncoding,
             buffer: &mut Buffer,
         ) -> Result<(), Box<dyn Error + Send + Sync>> {
-            write!(buffer, "{}", termion::clear::All)?;
+            write!(buffer, "{}", termion::clear::AfterCursor)?;
 
             self.pixels.iter().enumerate().try_for_each(
                 |(i, pixel)| -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -225,7 +226,7 @@ pub mod frame {
                         pixel.blue,
                     ))))?;
 
-                    if (i * 2) % self.frame_size.x as usize == 0 {
+                    if i % self.frame_size.x as usize == 0 {
                         write!(buffer, "\n")?;
                     }
 
@@ -238,6 +239,23 @@ pub mod frame {
             )?;
 
             Ok(())
+        }
+
+        pub fn to_image_buffer(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+            let mut image = ImageBuffer::new(self.frame_size.x as u32, self.frame_size.y as u32);
+            self.pixels.iter().enumerate().for_each(|(i, p)| {
+                let x = i as u32 % self.frame_size.x as u32;
+                let y = i as u32 / self.frame_size.x as u32;
+                image.put_pixel(
+                    x,
+                    y,
+                    Rgb {
+                        0: [p.red, p.green, p.blue],
+                    },
+                );
+            });
+
+            image
         }
     }
 
