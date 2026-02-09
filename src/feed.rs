@@ -8,14 +8,17 @@ use image::{DynamicImage, ImageBuffer, Rgb};
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 use termcolor::BufferWriter;
 use termion::terminal_size;
 use tokio::net::UdpSocket;
+use tokio::time::timeout;
 
 #[async_trait]
 pub trait Feed: 'static {
     const FRAME_RATE: u32;
     const ENCODE_CONFIG: Configuration;
+    const TIMEOUT_DURATION: Duration;
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
     where
@@ -133,7 +136,10 @@ pub trait Feed: 'static {
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             rate_limiter.acquire().await;
 
-            connection.recv(&mut buffer_temp).await?;
+            if let Err(_) = timeout(Self::TIMEOUT_DURATION, connection.recv(&mut buffer_temp)).await
+            {
+                continue;
+            }
             let frame = Self::decode_frame(&buffer_temp)?;
 
             let mut buffer = buffer_writer.buffer();

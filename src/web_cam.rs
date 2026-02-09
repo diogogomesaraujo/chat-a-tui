@@ -6,7 +6,7 @@ use nokhwa::{
     query,
     utils::{ApiBackend, CameraFormat, RequestedFormat, RequestedFormatType, Resolution},
 };
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use crate::feed::Feed;
 
@@ -17,6 +17,7 @@ pub struct WebCam {
 impl Feed for WebCam {
     const FRAME_RATE: u32 = 600;
     const ENCODE_CONFIG: Configuration = config::standard();
+    const TIMEOUT_DURATION: Duration = Duration::from_secs(1);
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         nokhwa_initialize(|granted| {

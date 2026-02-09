@@ -1,7 +1,7 @@
 use crate::{FILTER, feed::Feed};
 use bincode::config::{self, Configuration};
 use image::{DynamicImage, ImageBuffer, Rgb};
-use std::error::Error;
+use std::{error::Error, time::Duration};
 use xcap::Monitor;
 
 pub struct Screen {
@@ -11,6 +11,7 @@ pub struct Screen {
 impl Feed for Screen {
     const FRAME_RATE: u32 = 200;
     const ENCODE_CONFIG: Configuration = config::standard();
+    const TIMEOUT_DURATION: Duration = Duration::from_secs(1);
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {
         Ok(Self {
