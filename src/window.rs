@@ -1,3 +1,5 @@
+//! Module that implements the higher level window where the feed will be displayed or that will stream the feed.
+
 use termcolor::{BufferWriter, ColorChoice};
 use tokio::net::UdpSocket;
 
@@ -6,6 +8,7 @@ use crate::feed::frame::AsciiEncoding;
 use std::error::Error;
 use std::sync::{Arc, atomic::AtomicBool};
 
+/// Struct that represents the window where the feed will be displayed or that will stream the feed.
 pub struct Window {
     buffer_writer: BufferWriter,
 }
@@ -13,6 +16,7 @@ pub struct Window {
 impl Window {
     const COLOR_CHOICE: ColorChoice = ColorChoice::Auto;
 
+    /// Function that creates a window from a coloured stdout.
     pub fn new(
         stdout: fn(ColorChoice) -> Result<BufferWriter, Box<dyn Error + Send + Sync>>,
     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
@@ -21,6 +25,7 @@ impl Window {
         })
     }
 
+    /// Function that displays the feed from any source in the colored stdout.
     pub async fn show_feed<T: Feed + Send>(
         self,
         encoding: AsciiEncoding,
@@ -29,6 +34,7 @@ impl Window {
         T::show(self.buffer_writer, encoding, end_flag).await
     }
 
+    /// Function that streams the feed captured from any feed source.
     pub async fn stream_feed<T: Feed + Send>(
         self,
         connection: UdpSocket,
@@ -37,6 +43,7 @@ impl Window {
         T::stream(connection, end_flag).await
     }
 
+    /// Function that shows the feed received from an UDP socket connection.
     pub async fn show_stream_feed<T: Feed + Send>(
         self,
         connection: UdpSocket,

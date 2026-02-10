@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use termcolor::BufferWriter;
-use tui_video_chat::{feed::frame::AsciiEncoding, web_cam::WebCam, window::Window};
+use tui_video_chat::{feed::frame::AsciiEncoding, webcam::WebCam, window::Window};
 
 const ENCODING: [char; 8] = [':', '-', '=', '+', '*', '%', '@', '#'];
 

@@ -1,3 +1,5 @@
+//! Module that communicates with the screen sharing API and converts it into a feed.
+
 use crate::{FILTER, feed::Feed};
 use bincode::config::{self, Configuration};
 use image::{DynamicImage, ImageBuffer, Rgb};

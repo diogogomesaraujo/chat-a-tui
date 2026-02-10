@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use termcolor::BufferWriter;
-use tui_video_chat::{stream::connect, web_cam::WebCam, window::Window};
+use tui_video_chat::{stream::connect, webcam::WebCam, window::Window};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {

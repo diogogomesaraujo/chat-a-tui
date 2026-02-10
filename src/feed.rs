@@ -1,3 +1,5 @@
+//! Module where image rendering, encoding, compression and streaming are implemented.
+
 use crate::FILTER;
 use crate::feed::frame::{AsciiEncoding, Frame, Image};
 use async_rate_limiter::RateLimiter;
@@ -13,21 +15,32 @@ use termcolor::BufferWriter;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 
+/// Trait that unifies how the feed is manipulated for all sources (e.g. webcam or screen sharing).
 #[async_trait]
 pub trait Feed: 'static {
+    /// Rate at which the feed's frames are displayed on the terminal.
     const FRAME_RATE: u32;
+
+    /// Configuration used to encode frames into bytes.
     const ENCODE_CONFIG: Configuration;
+
+    /// In case of communication failure, the time the system should wait for the connection to reappear.
     const TIMEOUT_DURATION: Duration;
+
+    /// The size of the frame that will be encoded and sent as an UDP packet.
     const STREAM_FRAME_SIZE: (u32, u32) = (60, 30);
 
+    /// Function that creates a new feed source.
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
     where
         Self: Sized;
 
+    /// Function that returns a frame using the API of the feed source.
     fn get_frame_rgb(
         &mut self,
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn Error + Send + Sync>>;
 
+    /// Function that resizes the frame to fill the terminal and applies effects on the frame to make it more visible.
     fn preprocess_frame(
         rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
     ) -> Result<Frame, Box<dyn Error + Send + Sync>> {
@@ -44,6 +57,7 @@ pub trait Feed: 'static {
         Ok(frame)
     }
 
+    /// Function that displays feed in the terminal (uses the alternative stdout).
     async fn show(
         buffer_writer: BufferWriter,
         encoding: AsciiEncoding,
@@ -74,10 +88,12 @@ pub trait Feed: 'static {
         Ok(())
     }
 
+    /// Function that encodes a frame into bytes.
     fn encode_frame(frame: Frame) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
         Ok(bincode::encode_to_vec(frame, Self::ENCODE_CONFIG)?)
     }
 
+    /// Function that dencodes a frame from bytes.
     fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
         let (decoded, _): (Frame, usize) =
             bincode::decode_from_slice(&bytes[..], Self::ENCODE_CONFIG)?;
@@ -85,6 +101,7 @@ pub trait Feed: 'static {
         Ok(decoded)
     }
 
+    /// Function that streams the feed using UDP Socket communication.
     async fn stream(
         connection: UdpSocket,
         end_flag: Arc<AtomicBool>,
@@ -113,6 +130,7 @@ pub trait Feed: 'static {
         Ok(())
     }
 
+    /// Function that displays the feed received from an UDP connection in the terminal (uses the alternative stdout).
     async fn show_stream(
         buffer_writer: BufferWriter,
         connection: UdpSocket,
@@ -152,7 +170,9 @@ pub trait Feed: 'static {
     }
 }
 
+/// Module that implements methods for frame and image manipulation.
 pub mod frame {
+    use crate::FILTER;
     use bincode::{Decode, Encode};
     use image::{DynamicImage, ImageBuffer, Luma, Rgb};
     use std::error::Error;
@@ -160,8 +180,7 @@ pub mod frame {
     use termcolor::{Buffer, Color, ColorSpec, WriteColor};
     use termion::terminal_size;
 
-    use crate::FILTER;
-
+    /// Struct that represents the size of the frame.
     #[derive(Clone, Encode, Decode)]
     pub struct Size {
         pub x: u16,
@@ -169,11 +188,14 @@ pub mod frame {
     }
 
     impl Size {
+        /// Function that creates a new frame.
         pub fn new(x: u16, y: u16) -> Self {
             Self { x, y }
         }
     }
 
+    /// Struct that represents a pixel in the frame. A pixel is composed by the primary colors
+    /// (red, green and blue) and a greyscale value for the brightness.
     #[derive(Encode, Decode)]
     pub struct Pixel {
         red: u8,
@@ -182,6 +204,7 @@ pub mod frame {
         grey_scale: u8,
     }
 
+    /// Struct that represents a collection of pixels.
     #[derive(Encode, Decode)]
     pub struct Frame {
         pub pixels: Vec<Pixel>,
@@ -189,6 +212,7 @@ pub mod frame {
     }
 
     impl Frame {
+        /// Function that creates a new frame from rgb and greyscale values.
         pub fn new(
             luma: ImageBuffer<Luma<u8>, Vec<u8>>,
             rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
@@ -213,6 +237,7 @@ pub mod frame {
             }
         }
 
+        /// Function that loads a buffer using the information in the frame to then be displayed.
         pub fn load_buffer(
             &self,
             encoding: &AsciiEncoding,
@@ -243,6 +268,7 @@ pub mod frame {
             Ok(())
         }
 
+        /// Function that converts a frame into an image to facilitate usage of `image` crate's effects.
         pub fn into_image(&self) -> Image {
             let mut image = Image::new(self.frame_size.x as u32, self.frame_size.y as u32);
             self.pixels.iter().enumerate().for_each(|(i, p)| {
@@ -261,9 +287,14 @@ pub mod frame {
         }
     }
 
+    /// Struct that represents the encoding used to convert greyscale values into characters.
+    /// They should be ordered from characters that fill the whitespace less to ones that fill
+    /// it more (e.g. 1. : -> 2. #)
     pub struct AsciiEncoding(pub Vec<char>);
 
     impl AsciiEncoding {
+        /// Function that converts a greyscale value into the correct char using the encoding defined.
+        /// It dynamically adapts to the size of the encoding's vector.
         pub fn from_greyscale_value8(&self, value: u8) -> char {
             let encodings_len = self.0.len() as u8 - 1;
             let range = u8::MAX;
@@ -272,13 +303,17 @@ pub mod frame {
         }
     }
 
+    /// Struct that represents an `ImageBuffer` from `image` crate to facilitate creation of extra methods for it.
     pub struct Image(pub ImageBuffer<Rgb<u8>, Vec<u8>>);
 
     impl Image {
+        /// Function that creates a new image.
         pub fn new(x: u32, y: u32) -> Self {
             Self(ImageBuffer::new(x, y))
         }
 
+        /// Function that resizes an image to the size of the terminal. The x-axis coordinate is divided by 2 because
+        /// for each pixel two characters are drawn in the terminal.
         pub fn image_to_terminal_size(self) -> (Self, u16, u16) {
             match terminal_size() {
                 Ok((x, y)) => (
@@ -301,20 +336,24 @@ pub mod frame {
             }
         }
 
+        /// Function that converts an image into a frame.
         pub fn into_frame(self) -> Frame {
             let luma = DynamicImage::ImageRgb8(self.buffer().clone()).into_luma8();
             let (x, y) = (self.0.width() as u16, self.0.height() as u16);
             Frame::new(luma, self.0, x, y)
         }
 
+        /// Function that returns a reference to the `ImageBuffer` from `image` crate.
         pub fn buffer(&self) -> &ImageBuffer<Rgb<u8>, Vec<u8>> {
             &self.0
         }
 
+        /// Function that returns the `ImageBuffer` from `image` crates.
         pub fn buffer_consume(self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
             self.0
         }
 
+        /// Function that returns a mutable reference to the `ImageBuffer` from `image` crate.
         pub fn buffer_mut(&mut self) -> &mut ImageBuffer<Rgb<u8>, Vec<u8>> {
             &mut self.0
         }

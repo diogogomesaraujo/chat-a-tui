@@ -1,3 +1,6 @@
+//! Module that communicates with the webcam API and converts it into a feed.
+
+use crate::feed::Feed;
 use bincode::config::{self, Configuration};
 use image::{ImageBuffer, Rgb};
 use nokhwa::{
@@ -7,8 +10,6 @@ use nokhwa::{
     utils::{ApiBackend, CameraFormat, RequestedFormat, RequestedFormatType, Resolution},
 };
 use std::{error::Error, time::Duration};
-
-use crate::feed::Feed;
 
 pub struct WebCam {
     pub camera: Camera,
