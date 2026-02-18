@@ -34,15 +34,6 @@ impl Window {
         T::show(self.buffer_writer, encoding, end_flag).await
     }
 
-    /// Function that streams the feed captured from any feed source.
-    pub async fn stream_feed<T: Feed + Send>(
-        self,
-        connection: UdpSocket,
-        end_flag: Arc<AtomicBool>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        T::stream(connection, end_flag).await
-    }
-
     /// Function that shows the feed received from an UDP socket connection.
     pub async fn show_stream_feed<T: Feed + Send>(
         self,

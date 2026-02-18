@@ -19,3 +19,12 @@ xcap = "0.8.1"
 termcolor = { git = "https://github.com/diogogomesaraujo/termcolor.git" }
 my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
 image = "0.25.9"
+tonic = "0.14.4"
+tonic-prost = "0.14.2"
+prost = "0.14.1"
+
+[build-dependencies]
+tonic-prost-build = "0.14.2"
+
+[profile.release]
+opt-level = 3

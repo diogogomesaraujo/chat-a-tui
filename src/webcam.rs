@@ -1,7 +1,6 @@
 //! Module that communicates with the webcam API and converts it into a feed.
 
 use crate::feed::Feed;
-use bincode::config::{self, Configuration};
 use image::{ImageBuffer, Rgb};
 use nokhwa::{
     Camera, nokhwa_initialize,
@@ -17,7 +16,6 @@ pub struct WebCam {
 
 impl Feed for WebCam {
     const FRAME_RATE: u32 = 600;
-    const ENCODE_CONFIG: Configuration = config::standard();
     const TIMEOUT_DURATION: Duration = Duration::from_secs(1);
 
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>> {

@@ -2,27 +2,33 @@
 
 use crate::FILTER;
 use crate::feed::frame::{AsciiEncoding, Frame, Image};
+use crate::feed::pb::FrameBytes;
+use crate::feed::pb::stream_service_server::StreamService;
 use async_rate_limiter::RateLimiter;
 use async_trait::async_trait;
-use bincode::config::Configuration;
 use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, Rgb};
 use std::error::Error;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use termcolor::BufferWriter;
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc;
 use tokio::time::timeout;
+use tokio_stream::Stream;
+use tonic::{Response, Status};
+
+pub mod pb {
+    tonic::include_proto!("feed");
+}
 
 /// Trait that unifies how the feed is manipulated for all sources (e.g. webcam or screen sharing).
 #[async_trait]
 pub trait Feed: 'static {
     /// Rate at which the feed's frames are displayed on the terminal.
     const FRAME_RATE: u32;
-
-    /// Configuration used to encode frames into bytes.
-    const ENCODE_CONFIG: Configuration;
 
     /// In case of communication failure, the time the system should wait for the connection to reappear.
     const TIMEOUT_DURATION: Duration;
@@ -88,48 +94,6 @@ pub trait Feed: 'static {
         Ok(())
     }
 
-    /// Function that encodes a frame into bytes.
-    fn encode_frame(frame: Frame) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        Ok(bincode::encode_to_vec(frame, Self::ENCODE_CONFIG)?)
-    }
-
-    /// Function that dencodes a frame from bytes.
-    fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (decoded, _): (Frame, usize) =
-            bincode::decode_from_slice(&bytes[..], Self::ENCODE_CONFIG)?;
-
-        Ok(decoded)
-    }
-
-    /// Function that streams the feed using UDP Socket communication.
-    async fn stream(
-        connection: UdpSocket,
-        end_flag: Arc<AtomicBool>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>
-    where
-        Self: Sized,
-    {
-        let mut feed_source = Self::new()?;
-
-        let (mut input_buffer, mut output_buffer) = triple_buffer::triple_buffer(&Vec::new());
-
-        while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
-            let rgb = feed_source.get_frame_rgb()?;
-            let frame = Image(image::imageops::resize(
-                &rgb,
-                Self::STREAM_FRAME_SIZE.0,
-                Self::STREAM_FRAME_SIZE.1,
-                FILTER,
-            ))
-            .into_frame();
-            input_buffer.write(Self::encode_frame(frame)?);
-
-            connection.send(&output_buffer.read()).await?;
-        }
-
-        Ok(())
-    }
-
     /// Function that displays the feed received from an UDP connection in the terminal (uses the alternative stdout).
     async fn show_stream(
         buffer_writer: BufferWriter,
@@ -154,7 +118,7 @@ pub trait Feed: 'static {
             {
                 continue;
             }
-            let (resized_image, _, _) = Self::decode_frame(&buffer_temp)?
+            let (resized_image, _, _) = Frame::decode_frame(&buffer_temp)?
                 .into_image()
                 .image_to_terminal_size();
             let frame = resized_image.into_frame();
@@ -170,9 +134,57 @@ pub trait Feed: 'static {
     }
 }
 
+#[async_trait]
+impl<T: Feed + Send + Sync> StreamService for T {
+    type ConnectStream =
+        Pin<Box<dyn Stream<Item = Result<FrameBytes, Status>> + Send + Sync + 'static>>;
+
+    async fn connect(
+        &self,
+        _request: tonic::Request<pb::ConnectionRequest>,
+    ) -> Result<tonic::Response<Self::ConnectStream>, tonic::Status> {
+        let (stream_tx, stream_rx) = mpsc::channel::<Result<FrameBytes, Status>>(1);
+
+        {
+            let mut feed_source = match Self::new() {
+                Ok(fs) => fs,
+                Err(_) => return Err(Status::unavailable("Couldn't open the feed source.")),
+            };
+            let (mut input_buffer, mut output_buffer) = triple_buffer::triple_buffer(&Vec::new());
+
+            tokio::spawn(async move {
+                loop {
+                    let rgb = feed_source.get_frame_rgb().unwrap();
+                    let frame = Image(image::imageops::resize(
+                        &rgb,
+                        Self::STREAM_FRAME_SIZE.0,
+                        Self::STREAM_FRAME_SIZE.1,
+                        FILTER,
+                    ))
+                    .into_frame();
+                    input_buffer.write(frame.encode_frame().unwrap());
+
+                    if let Err(_) = stream_tx
+                        .send(Ok(FrameBytes {
+                            payload: output_buffer.read().clone(),
+                        }))
+                        .await
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+
+        Ok(Response::new(Box::pin(
+            tokio_stream::wrappers::ReceiverStream::new(stream_rx),
+        )))
+    }
+}
+
 /// Module that implements methods for frame and image manipulation.
 pub mod frame {
-    use crate::FILTER;
+    use crate::{ENCODE_CONFIG, FILTER};
     use bincode::{Decode, Encode};
     use image::{DynamicImage, ImageBuffer, Luma, Rgb};
     use std::error::Error;
@@ -284,6 +296,19 @@ pub mod frame {
             });
 
             image
+        }
+
+        /// Function that encodes a frame into bytes.
+        pub fn encode_frame(self) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+            Ok(bincode::encode_to_vec(self, ENCODE_CONFIG)?)
+        }
+
+        /// Function that dencodes a frame from bytes.
+        pub fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
+            let (decoded, _): (Frame, usize) =
+                bincode::decode_from_slice(&bytes[..], ENCODE_CONFIG)?;
+
+            Ok(decoded)
         }
     }
 

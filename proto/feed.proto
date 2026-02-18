@@ -1,0 +1,12 @@
+syntax = "proto3";
+package feed;
+
+message FrameBytes {
+  bytes payload = 1;
+}
+
+message ConnectionRequest {}
+
+service StreamService {
+  rpc Connect(ConnectionRequest) returns (stream FrameBytes);
+}
