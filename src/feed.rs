@@ -1,6 +1,5 @@
 //! Module where image rendering, encoding, compression and streaming are implemented.
 
-use crate::FILTER;
 use crate::feed::frame::{AsciiEncoding, Frame, Image};
 use async_rate_limiter::RateLimiter;
 use async_trait::async_trait;
@@ -41,10 +40,8 @@ pub trait Feed: 'static {
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn Error + Send + Sync>>;
 
     /// Function that resizes the frame to fill the terminal and applies effects on the frame to make it more visible.
-    fn preprocess_frame(
-        rgb: ImageBuffer<Rgb<u8>, Vec<u8>>,
-    ) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (mut rgb, x, y) = Image(rgb).image_to_terminal_size();
+    fn preprocess_frame(rgb: Image, x: u16, y: u16) -> Result<Frame, Box<dyn Error + Send + Sync>> {
+        let mut rgb = rgb;
 
         brighten_in_place(rgb.buffer_mut(), 40);
 
@@ -76,7 +73,8 @@ pub trait Feed: 'static {
             rate_limiter.acquire().await;
 
             let rgb = feed_source.get_frame_rgb()?;
-            let frame = Self::preprocess_frame(rgb)?;
+            let (rgb, x, y) = Image(rgb).image_to_terminal_size();
+            let frame = Self::preprocess_frame(rgb, x, y)?;
 
             let mut buffer = buffer_writer.buffer();
             frame.load_buffer(&encoding, &mut buffer)?;
@@ -114,7 +112,8 @@ pub trait Feed: 'static {
 
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             let rgb = feed_source.get_frame_rgb()?;
-            let frame = Image(rgb).into_frame();
+            let (x, y) = (rgb.width() as u16, rgb.height() as u16);
+            let frame = Self::preprocess_frame(Image(rgb), x, y)?;
             input_buffer.write(Self::encode_frame(frame)?);
 
             let bytes_len = output_buffer.read().len() as u32;
