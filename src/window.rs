@@ -1,10 +1,10 @@
 //! Module that implements the higher level window where the feed will be displayed or that will stream the feed.
 
 use termcolor::{BufferWriter, ColorChoice};
-use tokio::net::UdpSocket;
 
 use crate::feed::Feed;
 use crate::feed::frame::AsciiEncoding;
+use crate::stream::{join_connection_stream, open_connection_stream};
 use std::error::Error;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -37,19 +37,25 @@ impl Window {
     /// Function that streams the feed captured from any feed source.
     pub async fn stream_feed<T: Feed + Send>(
         self,
-        connection: UdpSocket,
+        port: u32,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        T::stream(connection, end_flag).await
+        let mut stream = open_connection_stream(port).await?;
+        T::stream(&mut stream, end_flag).await
     }
 
     /// Function that shows the feed received from an UDP socket connection.
     pub async fn show_stream_feed<T: Feed + Send>(
         self,
-        connection: UdpSocket,
+        server_address: &str,
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        T::show_stream(self.buffer_writer, connection, &encoding, end_flag).await
+        let mut stream = match join_connection_stream(server_address).await? {
+            Some(stream) => stream,
+            None => return Err("Couldn't accept connection".into()),
+        };
+
+        T::show_stream(self.buffer_writer, &mut stream, &encoding, end_flag).await
     }
 }

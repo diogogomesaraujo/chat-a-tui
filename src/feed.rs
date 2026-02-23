@@ -7,13 +7,16 @@ use async_trait::async_trait;
 use bincode::config::Configuration;
 use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, Rgb};
+use s2n_quic::stream::BidirectionalStream;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use termcolor::BufferWriter;
-use tokio::net::UdpSocket;
-use tokio::time::timeout;
+use tokio::io::AsyncReadExt;
+use tokio_util::bytes::Bytes;
+
+pub const STREAM_BUFFER_SIZE: usize = 20000;
 
 /// Trait that unifies how the feed is manipulated for all sources (e.g. webcam or screen sharing).
 #[async_trait]
@@ -26,9 +29,6 @@ pub trait Feed: 'static {
 
     /// In case of communication failure, the time the system should wait for the connection to reappear.
     const TIMEOUT_DURATION: Duration;
-
-    /// The size of the frame that will be encoded and sent as an UDP packet.
-    const STREAM_FRAME_SIZE: (u32, u32) = (60, 30);
 
     /// Function that creates a new feed source.
     fn new() -> Result<Self, Box<dyn Error + Send + Sync>>
@@ -95,15 +95,14 @@ pub trait Feed: 'static {
 
     /// Function that dencodes a frame from bytes.
     fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (decoded, _): (Frame, usize) =
-            bincode::decode_from_slice(&bytes[..], Self::ENCODE_CONFIG)?;
+        let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, Self::ENCODE_CONFIG)?;
 
         Ok(decoded)
     }
 
     /// Function that streams the feed using UDP Socket communication.
     async fn stream(
-        connection: UdpSocket,
+        stream: &mut BidirectionalStream,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
@@ -115,16 +114,18 @@ pub trait Feed: 'static {
 
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             let rgb = feed_source.get_frame_rgb()?;
-            let frame = Image(image::imageops::resize(
-                &rgb,
-                Self::STREAM_FRAME_SIZE.0,
-                Self::STREAM_FRAME_SIZE.1,
-                FILTER,
-            ))
-            .into_frame();
+            let frame = Image(rgb).into_frame();
             input_buffer.write(Self::encode_frame(frame)?);
 
-            connection.send(&output_buffer.read()).await?;
+            let bytes_len = output_buffer.read().len() as u32;
+
+            stream
+                .send(Bytes::copy_from_slice(&bytes_len.to_le_bytes()))
+                .await?;
+
+            stream
+                .send(Bytes::copy_from_slice(output_buffer.read()))
+                .await?;
         }
 
         Ok(())
@@ -133,7 +134,7 @@ pub trait Feed: 'static {
     /// Function that displays the feed received from an UDP connection in the terminal (uses the alternative stdout).
     async fn show_stream(
         buffer_writer: BufferWriter,
-        connection: UdpSocket,
+        stream: &mut BidirectionalStream,
         encoding: &AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -145,18 +146,19 @@ pub trait Feed: 'static {
         let (mut input_buffer, mut output_buffer) =
             triple_buffer::triple_buffer(&buffer_writer.buffer());
 
-        let mut buffer_temp = vec![0u8; 65_507];
+        let mut len_buffer = [0u8; 4];
 
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             rate_limiter.acquire().await;
 
-            if let Err(_) = timeout(Self::TIMEOUT_DURATION, connection.recv(&mut buffer_temp)).await
-            {
-                continue;
-            }
-            let (resized_image, _, _) = Self::decode_frame(&buffer_temp)?
-                .into_image()
-                .image_to_terminal_size();
+            stream.read_exact(&mut len_buffer).await?;
+            let frame_len = u32::from_le_bytes(len_buffer);
+
+            let mut frame_buffer = vec![0u8; frame_len as usize];
+            stream.read_exact(&mut frame_buffer).await?;
+
+            let frame = Self::decode_frame(&frame_buffer)?;
+            let (resized_image, _, _) = frame.into_image().image_to_terminal_size();
             let frame = resized_image.into_frame();
 
             let mut buffer = buffer_writer.buffer();

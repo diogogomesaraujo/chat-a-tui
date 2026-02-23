@@ -19,3 +19,5 @@ xcap = "0.8.1"
 termcolor = { git = "https://github.com/diogogomesaraujo/termcolor.git" }
 my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
 image = "0.25.9"
+rcgen = "0.14.7"
+s2n-quic = "1.74.0"

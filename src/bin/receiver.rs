@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 use termcolor::BufferWriter;
-use tui_video_chat::{feed::frame::AsciiEncoding, stream::connect, webcam::WebCam, window::Window};
+use tui_video_chat::{feed::frame::AsciiEncoding, webcam::WebCam, window::Window};
 
 const ENCODING: [char; 8] = [':', '-', '=', '+', '*', '%', '@', '#'];
 
@@ -21,10 +21,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let window = Window::new(BufferWriter::alternate_stdout)?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
 
-    let connection = connect(3000, "localhost:3001").await?;
-
     window
-        .show_stream_feed::<WebCam>(connection, encoding, end_flag)
+        .show_stream_feed::<WebCam>("127.0.0.1:3000", encoding, end_flag)
         .await?;
 
     print!("{}", termion::clear::All);
