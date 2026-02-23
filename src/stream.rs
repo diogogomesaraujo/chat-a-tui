@@ -1,5 +1,9 @@
 use rcgen::generate_simple_self_signed;
-use s2n_quic::{Client, Server, client::Connect, stream::BidirectionalStream};
+use s2n_quic::{
+    Client, Server,
+    client::Connect,
+    stream::{ReceiveStream, SendStream},
+};
 use std::{error::Error, net::SocketAddr, path::Path, str::FromStr};
 use tokio::{fs::File, io::AsyncReadExt};
 
@@ -26,22 +30,20 @@ pub async fn certificate_and_key_pair_from_files(
     Ok((certificate, key))
 }
 
-pub async fn open_connection_stream(
-    port: u32,
-) -> Result<BidirectionalStream, Box<dyn Error + Send + Sync>> {
+pub async fn open_connection_stream(port: u32) -> Result<SendStream, Box<dyn Error + Send + Sync>> {
     let mut server = Server::builder()
         .with_tls((Path::new("cert.pem"), Path::new("key.pem")))?
         .with_io(format!("127.0.0.1:{}", port).as_str())?
         .start()?;
     let mut connection = server.accept().await.expect("Should not fail");
     connection.keep_alive(true)?;
-    let stream = connection.open_bidirectional_stream().await?;
+    let stream = connection.open_send_stream().await?;
     Ok(stream)
 }
 
 pub async fn join_connection_stream(
     server_address: &str,
-) -> Result<Option<BidirectionalStream>, Box<dyn Error + Send + Sync>> {
+) -> Result<Option<ReceiveStream>, Box<dyn Error + Send + Sync>> {
     let client = Client::builder()
         .with_tls((Path::new("cert.pem"), Path::new("key.pem")))?
         .with_io("0.0.0.0:0")?
@@ -49,5 +51,5 @@ pub async fn join_connection_stream(
     let connect = Connect::new(SocketAddr::from_str(server_address)?).with_server_name("localhost");
     let mut connection = client.connect(connect).await?;
     connection.keep_alive(true)?;
-    Ok(connection.accept_bidirectional_stream().await?)
+    Ok(connection.accept_receive_stream().await?)
 }

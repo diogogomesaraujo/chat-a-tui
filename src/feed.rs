@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use bincode::config::Configuration;
 use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, Rgb};
-use s2n_quic::stream::BidirectionalStream;
+use s2n_quic::stream::{ReceiveStream, SendStream};
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -102,7 +102,7 @@ pub trait Feed: 'static {
 
     /// Function that streams the feed using UDP Socket communication.
     async fn stream(
-        stream: &mut BidirectionalStream,
+        stream: &mut SendStream,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
@@ -134,7 +134,7 @@ pub trait Feed: 'static {
     /// Function that displays the feed received from an UDP connection in the terminal (uses the alternative stdout).
     async fn show_stream(
         buffer_writer: BufferWriter,
-        stream: &mut BidirectionalStream,
+        stream: &mut ReceiveStream,
         encoding: &AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
