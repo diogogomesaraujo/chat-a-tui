@@ -21,3 +21,4 @@ my-flag = { git = "https://github.com/diogogomesaraujo/tokio-flag.git" }
 image = "0.25.9"
 rcgen = "0.14.7"
 s2n-quic = "1.74.0"
+clap = { version = "4.5.49", features = ["derive"] }

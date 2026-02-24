@@ -31,7 +31,7 @@ impl Window {
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        T::show(self.buffer_writer, encoding, end_flag).await
+        T::display(self.buffer_writer, encoding, end_flag).await
     }
 
     /// Function that streams the feed captured from any feed source.
@@ -51,11 +51,7 @@ impl Window {
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let mut stream = match join_connection_stream(server_address).await? {
-            Some(stream) => stream,
-            None => return Err("Couldn't accept connection".into()),
-        };
-
-        T::show_stream(self.buffer_writer, &mut stream, &encoding, end_flag).await
+        let mut stream = join_connection_stream(server_address).await?;
+        T::display_stream(self.buffer_writer, &mut stream, &encoding, end_flag).await
     }
 }

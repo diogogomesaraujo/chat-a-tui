@@ -43,7 +43,7 @@ pub async fn open_connection_stream(port: u32) -> Result<SendStream, Box<dyn Err
 
 pub async fn join_connection_stream(
     server_address: &str,
-) -> Result<Option<ReceiveStream>, Box<dyn Error + Send + Sync>> {
+) -> Result<ReceiveStream, Box<dyn Error + Send + Sync>> {
     let client = Client::builder()
         .with_tls((Path::new("cert.pem"), Path::new("key.pem")))?
         .with_io("0.0.0.0:0")?
@@ -51,5 +51,9 @@ pub async fn join_connection_stream(
     let connect = Connect::new(SocketAddr::from_str(server_address)?).with_server_name("localhost");
     let mut connection = client.connect(connect).await?;
     connection.keep_alive(true)?;
-    Ok(connection.accept_receive_stream().await?)
+    let stream = match connection.accept_receive_stream().await? {
+        Some(stream) => stream,
+        None => return Err("Couldn't connect to the server".into()),
+    };
+    Ok(stream)
 }

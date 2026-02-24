@@ -13,6 +13,7 @@ use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use termcolor::BufferWriter;
 use tokio::io::AsyncReadExt;
+use tokio::time::timeout;
 use tokio_util::bytes::Bytes;
 
 pub const STREAM_BUFFER_SIZE: usize = 20000;
@@ -54,8 +55,20 @@ pub trait Feed: 'static {
         Ok(frame)
     }
 
+    /// Function that encodes a frame into bytes.
+    fn encode_frame(frame: Frame) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+        Ok(bincode::encode_to_vec(frame, Self::ENCODE_CONFIG)?)
+    }
+
+    /// Function that dencodes a frame from bytes.
+    fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
+        let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, Self::ENCODE_CONFIG)?;
+
+        Ok(decoded)
+    }
+
     /// Function that displays feed in the terminal (uses the alternative stdout).
-    async fn show(
+    async fn display(
         buffer_writer: BufferWriter,
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
@@ -86,18 +99,6 @@ pub trait Feed: 'static {
         Ok(())
     }
 
-    /// Function that encodes a frame into bytes.
-    fn encode_frame(frame: Frame) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        Ok(bincode::encode_to_vec(frame, Self::ENCODE_CONFIG)?)
-    }
-
-    /// Function that dencodes a frame from bytes.
-    fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, Self::ENCODE_CONFIG)?;
-
-        Ok(decoded)
-    }
-
     /// Function that streams the feed using UDP Socket communication.
     async fn stream(
         stream: &mut SendStream,
@@ -118,20 +119,24 @@ pub trait Feed: 'static {
 
             let bytes_len = output_buffer.read().len() as u32;
 
-            stream
-                .send(Bytes::copy_from_slice(&bytes_len.to_le_bytes()))
-                .await?;
+            timeout(
+                Duration::from(Self::TIMEOUT_DURATION),
+                stream.send(Bytes::copy_from_slice(&bytes_len.to_le_bytes())),
+            )
+            .await??;
 
-            stream
-                .send(Bytes::copy_from_slice(output_buffer.read()))
-                .await?;
+            timeout(
+                Duration::from(Self::TIMEOUT_DURATION),
+                stream.send(Bytes::copy_from_slice(output_buffer.read())),
+            )
+            .await??;
         }
 
         Ok(())
     }
 
     /// Function that displays the feed received from an UDP connection in the terminal (uses the alternative stdout).
-    async fn show_stream(
+    async fn display_stream(
         buffer_writer: BufferWriter,
         stream: &mut ReceiveStream,
         encoding: &AsciiEncoding,
@@ -150,11 +155,19 @@ pub trait Feed: 'static {
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             rate_limiter.acquire().await;
 
-            stream.read_exact(&mut len_buffer).await?;
+            timeout(
+                Duration::from(Self::TIMEOUT_DURATION),
+                stream.read_exact(&mut len_buffer),
+            )
+            .await??;
             let frame_len = u32::from_le_bytes(len_buffer);
 
             let mut frame_buffer = vec![0u8; frame_len as usize];
-            stream.read_exact(&mut frame_buffer).await?;
+            timeout(
+                Duration::from(Self::TIMEOUT_DURATION),
+                stream.read_exact(&mut frame_buffer),
+            )
+            .await??;
 
             let frame = Self::decode_frame(&frame_buffer)?;
             let (resized_image, _, _) = frame.into_image().image_to_terminal_size();

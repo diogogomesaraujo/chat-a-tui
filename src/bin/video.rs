@@ -14,9 +14,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     end_flag.load(std::sync::atomic::Ordering::SeqCst);
 
     let end_flag_ctrlc = end_flag.clone();
-    ctrlc::set_handler(move || {
-        end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
-    })?;
+    tokio::spawn(async move {
+        ctrlc::set_handler(move || {
+            end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
+        })?;
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
+    });
 
     let window = Window::new(BufferWriter::alternate_stdout)?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
