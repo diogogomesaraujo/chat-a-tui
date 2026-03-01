@@ -3,7 +3,6 @@
 use crate::feed::frame::{AsciiEncoding, Frame, Image};
 use async_rate_limiter::RateLimiter;
 use async_trait::async_trait;
-use bincode::config::Configuration;
 use image::imageops::colorops::{brighten_in_place, contrast_in_place};
 use image::{DynamicImage, ImageBuffer, Rgb};
 use s2n_quic::stream::{ReceiveStream, SendStream};
@@ -23,9 +22,6 @@ pub const STREAM_BUFFER_SIZE: usize = 20000;
 pub trait Feed: 'static {
     /// Rate at which the feed's frames are displayed on the terminal.
     const FRAME_RATE: u32;
-
-    /// Configuration used to encode frames into bytes.
-    const ENCODE_CONFIG: Configuration;
 
     /// In case of communication failure, the time the system should wait for the connection to reappear.
     const TIMEOUT_DURATION: Duration;
@@ -53,18 +49,6 @@ pub trait Feed: 'static {
         let frame = Frame::new(luma, rgb.buffer_consume(), x, y);
 
         Ok(frame)
-    }
-
-    /// Function that encodes a frame into bytes.
-    fn encode_frame(frame: Frame) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        Ok(bincode::encode_to_vec(frame, Self::ENCODE_CONFIG)?)
-    }
-
-    /// Function that dencodes a frame from bytes.
-    fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-        let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, Self::ENCODE_CONFIG)?;
-
-        Ok(decoded)
     }
 
     /// Function that displays feed in the terminal (uses the alternative stdout).
@@ -115,7 +99,7 @@ pub trait Feed: 'static {
             let rgb = feed_source.get_frame_rgb()?;
             let (x, y) = (rgb.width() as u16, rgb.height() as u16);
             let frame = Self::preprocess_frame(Image(rgb), x, y)?;
-            input_buffer.write(Self::encode_frame(frame)?);
+            input_buffer.write(frame.encode_frame()?);
 
             let bytes_len = output_buffer.read().len() as u32;
 
@@ -169,7 +153,7 @@ pub trait Feed: 'static {
             )
             .await??;
 
-            let frame = Self::decode_frame(&frame_buffer)?;
+            let frame = Frame::decode_frame(&frame_buffer)?;
             let (resized_image, _, _) = frame.into_image().image_to_terminal_size();
             let frame = resized_image.into_frame();
 
@@ -186,7 +170,7 @@ pub trait Feed: 'static {
 
 /// Module that implements methods for frame and image manipulation.
 pub mod frame {
-    use crate::FILTER;
+    use crate::{ENCODE_CONFIG, FILTER};
     use bincode::{Decode, Encode};
     use image::{DynamicImage, ImageBuffer, Luma, Rgb};
     use std::error::Error;
@@ -280,6 +264,18 @@ pub mod frame {
             )?;
 
             Ok(())
+        }
+
+        /// Function that encodes a frame into bytes.
+        pub fn encode_frame(&self) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+            Ok(bincode::encode_to_vec(self, ENCODE_CONFIG)?)
+        }
+
+        /// Function that dencodes a frame from bytes.
+        pub fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
+            let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, ENCODE_CONFIG)?;
+
+            Ok(decoded)
         }
 
         /// Function that converts a frame into an image to facilitate usage of `image` crate's effects.

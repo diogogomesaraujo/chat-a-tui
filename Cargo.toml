@@ -22,3 +22,11 @@ image = "0.25.9"
 rcgen = "0.14.7"
 s2n-quic = "1.74.0"
 clap = { version = "4.5.49", features = ["derive"] }
+ratatui = { version = "0.30.0"}
+color-eyre = "0.6.5"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
