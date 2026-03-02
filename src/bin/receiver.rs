@@ -18,11 +18,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
     })?;
 
-    let window = Window::new(BufferWriter::alternate_stdout)?;
+    let window = Window::<WebCam>::new(BufferWriter::alternate_stdout)?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
 
     window
-        .show_stream_feed::<WebCam>("127.0.0.1:3000", encoding, end_flag)
+        .show_stream_feed("127.0.0.1:3000", encoding, end_flag)
         .await?;
 
     print!("{}", termion::clear::All);

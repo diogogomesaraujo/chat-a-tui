@@ -53,6 +53,7 @@ pub trait Feed: 'static {
 
     /// Function that displays feed in the terminal (uses the alternative stdout).
     async fn display(
+        &mut self,
         buffer_writer: BufferWriter,
         encoding: AsciiEncoding,
         end_flag: Arc<AtomicBool>,
@@ -60,7 +61,6 @@ pub trait Feed: 'static {
     where
         Self: Sized,
     {
-        let mut feed_source = Self::new()?;
         let rate_limiter = RateLimiter::new(Self::FRAME_RATE as usize);
 
         let (mut input_buffer, mut output_buffer) =
@@ -69,7 +69,7 @@ pub trait Feed: 'static {
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
             rate_limiter.acquire().await;
 
-            let rgb = feed_source.get_frame_rgb()?;
+            let rgb = self.get_frame_rgb()?;
             let (rgb, x, y) = Image(rgb).image_to_terminal_size();
             let frame = Self::preprocess_frame(rgb, x, y)?;
 
@@ -85,18 +85,17 @@ pub trait Feed: 'static {
 
     /// Function that streams the feed using UDP Socket communication.
     async fn stream(
+        &mut self,
         stream: &mut SendStream,
         end_flag: Arc<AtomicBool>,
     ) -> Result<(), Box<dyn Error + Send + Sync>>
     where
         Self: Sized,
     {
-        let mut feed_source = Self::new()?;
-
         let (mut input_buffer, mut output_buffer) = triple_buffer::triple_buffer(&Vec::new());
 
         while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
-            let rgb = feed_source.get_frame_rgb()?;
+            let rgb = self.get_frame_rgb()?;
             let (x, y) = (rgb.width() as u16, rgb.height() as u16);
             let frame = Self::preprocess_frame(Image(rgb), x, y)?;
             input_buffer.write(frame.encode_frame()?);

@@ -21,10 +21,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Ok::<(), Box<dyn Error + Send + Sync>>(())
     });
 
-    let window = Window::new(BufferWriter::alternate_stdout)?;
+    let window = Window::<WebCam>::new(BufferWriter::alternate_stdout)?;
     let encoding = AsciiEncoding(ENCODING.to_vec());
 
-    window.show_feed::<WebCam>(encoding, end_flag).await?;
+    window.show_feed(encoding, end_flag).await?;
 
     print!("{}", termion::clear::All);
     stdout().flush()?;

@@ -16,9 +16,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         end_flag_ctrlc.store(true, std::sync::atomic::Ordering::SeqCst);
     })?;
 
-    let window = Window::new(BufferWriter::alternate_stdout)?;
+    let window = Window::<WebCam>::new(BufferWriter::alternate_stdout)?;
 
-    window.stream_feed::<WebCam>(3000, end_flag).await?;
+    window.stream_feed(3000, end_flag).await?;
 
     print!("{}", termion::clear::All);
     stdout().flush()?;
