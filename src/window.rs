@@ -60,15 +60,3 @@ impl<T: Feed + Send> Window<T> {
         T::display_stream(self.buffer_writer, &mut stream, &encoding, end_flag).await
     }
 }
-
-pub struct WindowWidget<T: Feed + Send> {
-    pub window: Window<T>,
-}
-
-impl<T: Feed + Send> Widget for WindowWidget<T> {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-    }
-}
