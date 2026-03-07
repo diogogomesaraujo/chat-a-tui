@@ -66,7 +66,7 @@ pub trait Feed: 'static {
         let (mut input_buffer, mut output_buffer) =
             triple_buffer::triple_buffer(&buffer_writer.buffer());
 
-        while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
+        while !end_flag.load(std::sync::atomic::Ordering::Acquire) {
             rate_limiter.acquire().await;
 
             let rgb = self.get_frame_rgb()?;
@@ -77,7 +77,7 @@ pub trait Feed: 'static {
             frame.load_buffer(&encoding, &mut buffer)?;
             input_buffer.write(buffer);
 
-            buffer_writer.print(&output_buffer.read())?;
+            buffer_writer.print(output_buffer.read())?;
         }
 
         Ok(())
@@ -94,7 +94,7 @@ pub trait Feed: 'static {
     {
         let (mut input_buffer, mut output_buffer) = triple_buffer::triple_buffer(&Vec::new());
 
-        while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
+        while !end_flag.load(std::sync::atomic::Ordering::Acquire) {
             let rgb = self.get_frame_rgb()?;
             let (x, y) = (rgb.width() as u16, rgb.height() as u16);
             let frame = Self::preprocess_frame(Image(rgb), x, y)?;
@@ -103,13 +103,13 @@ pub trait Feed: 'static {
             let bytes_len = output_buffer.read().len() as u32;
 
             timeout(
-                Duration::from(Self::TIMEOUT_DURATION),
+                Self::TIMEOUT_DURATION,
                 stream.send(Bytes::copy_from_slice(&bytes_len.to_le_bytes())),
             )
             .await??;
 
             timeout(
-                Duration::from(Self::TIMEOUT_DURATION),
+                Self::TIMEOUT_DURATION,
                 stream.send(Bytes::copy_from_slice(output_buffer.read())),
             )
             .await??;
@@ -135,32 +135,24 @@ pub trait Feed: 'static {
 
         let mut len_buffer = [0u8; 4];
 
-        while end_flag.load(std::sync::atomic::Ordering::Acquire) == false {
+        while !end_flag.load(std::sync::atomic::Ordering::Acquire) {
             rate_limiter.acquire().await;
 
-            timeout(
-                Duration::from(Self::TIMEOUT_DURATION),
-                stream.read_exact(&mut len_buffer),
-            )
-            .await??;
+            timeout(Self::TIMEOUT_DURATION, stream.read_exact(&mut len_buffer)).await??;
             let frame_len = u32::from_le_bytes(len_buffer);
 
             let mut frame_buffer = vec![0u8; frame_len as usize];
-            timeout(
-                Duration::from(Self::TIMEOUT_DURATION),
-                stream.read_exact(&mut frame_buffer),
-            )
-            .await??;
+            timeout(Self::TIMEOUT_DURATION, stream.read_exact(&mut frame_buffer)).await??;
 
             let frame = Frame::decode_frame(&frame_buffer)?;
             let (resized_image, _, _) = frame.into_image().image_to_terminal_size();
             let frame = resized_image.into_frame();
 
             let mut buffer = buffer_writer.buffer();
-            frame.load_buffer(&encoding, &mut buffer)?;
+            frame.load_buffer(encoding, &mut buffer)?;
             input_buffer.write(buffer);
 
-            buffer_writer.print(&output_buffer.read())?;
+            buffer_writer.print(output_buffer.read())?;
         }
 
         Ok(())
@@ -251,7 +243,7 @@ pub mod frame {
                     ))))?;
 
                     if i % self.frame_size.x as usize == 0 {
-                        write!(buffer, "\n")?;
+                        writeln!(buffer)?;
                     }
 
                     let char_to_print = encoding.from_greyscale_value8(pixel.grey_scale);
@@ -272,7 +264,7 @@ pub mod frame {
 
         /// Function that dencodes a frame from bytes.
         pub fn decode_frame(bytes: &[u8]) -> Result<Frame, Box<dyn Error + Send + Sync>> {
-            let (decoded, _): (Frame, usize) = bincode::decode_from_slice(&bytes, ENCODE_CONFIG)?;
+            let (decoded, _): (Frame, usize) = bincode::decode_from_slice(bytes, ENCODE_CONFIG)?;
 
             Ok(decoded)
         }
@@ -283,13 +275,9 @@ pub mod frame {
             self.pixels.iter().enumerate().for_each(|(i, p)| {
                 let x = i as u32 % self.frame_size.x as u32;
                 let y = i as u32 / self.frame_size.x as u32;
-                image.buffer_mut().put_pixel(
-                    x,
-                    y,
-                    Rgb {
-                        0: [p.red, p.green, p.blue],
-                    },
-                );
+                image
+                    .buffer_mut()
+                    .put_pixel(x, y, Rgb([p.red, p.green, p.blue]));
             });
 
             image
@@ -336,10 +324,7 @@ pub mod frame {
                     y,
                 ),
                 Err(_) => {
-                    let (x, y) = (
-                        self.0.width().clone() as u16,
-                        self.0.height().clone() as u16,
-                    );
+                    let (x, y) = (self.0.width() as u16, self.0.height() as u16);
                     (self, x / 2, y)
                 }
             }
