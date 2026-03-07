@@ -13,9 +13,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About
 
-This is a passion project developed in order to learn more about state of the art streaming protocols like QUIC and AES-GSM (in Rust of course). 
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+This is a passion project developed in order to learn more about state of the art streaming protocols like QUIC. 
 
 ### Features
 - [x] Render video feed (e.g. screen capture) onto the terminal.
@@ -27,5 +25,3 @@ These are some of the tools used to build this project.
 
 * `tokio`, the asynchronous runtime.
 * `s2c-quic` for streaming data securely over the QUIC protocol.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>

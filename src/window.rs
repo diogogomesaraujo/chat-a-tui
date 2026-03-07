@@ -1,6 +1,5 @@
 //! Module that implements the higher level window where the feed will be displayed or that will stream the feed.
 
-use ratatui::widgets::Widget;
 use termcolor::{BufferWriter, ColorChoice};
 
 use crate::feed::Feed;
