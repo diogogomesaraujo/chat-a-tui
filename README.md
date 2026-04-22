@@ -17,11 +17,11 @@ This is a passion project developed in order to learn more about state of the ar
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Features
+## Features
 - [x] Render video feed (e.g. screen capture) onto the terminal.
 - [x] Stream feed across a secure channel (using TLS certificates). 
 
-### Built With
+## Built With
 
 These are some of the tools used to build this project.
 
